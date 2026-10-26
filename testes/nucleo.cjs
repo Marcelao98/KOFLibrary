@@ -45,3 +45,13 @@ const px = new Uint8ClampedArray(100 * 100 * 4).fill(255);
 for (let y = 30; y < 70; y++) for (let x = 20; x < 80; x++) { const i = (y * 100 + x) * 4; px[i] = px[i + 1] = px[i + 2] = 0; }
 igual(Array.from(K.Bordas.medir(px, 100, 100)), [19, 29, 81, 71], 'bordas brancas cortadas');
 process.exitCode = falhas ? 1 : 0;
+// estatísticas (Kof)
+{
+  const E = K.Estatisticas, v = (a) => Int32Array.from(a);
+  igual([E.sequencia(v([0, 400, 400, 400, 0]), 5, 300), E.sequencia(v([400, 0, 400, 400, 400]), 5, 300), E.recorde(v([400, 400, 0, 400, 400, 400, 0]), 7, 300)], [3, 3, 3], 'sequência (hoje sem leitura não quebra) e recorde');
+  igual([E.nivel(0), E.nivel(300), E.nivel(1200), E.nivel(2400), E.nivel(9000)], [0, 1, 2, 3, 4], 'níveis do calendário');
+  igual([E.porcento(3, 12), E.esperado(12, 15, 30), E.previsao(4, 12, 10), E.previsao(0, 12, 10)], [25, 6, 30, -1], 'meta: %, esperado e previsão');
+  const h = new Int32Array(24); h[22] = 500; h[8] = 100;
+  igual([E.horaFavorita(h), E.tipoLeitor(22), E.tipoLeitor(2)], [22, '🌙 Leitor da noite', '🦉 Coruja (lê de madrugada)'], 'horário favorito');
+  process.exitCode = falhas ? 1 : 0;
+}

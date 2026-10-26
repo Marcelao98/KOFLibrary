@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final int PEDIDO_PASTA = 1, PEDIDO_PDF = 2, PEDIDO_SALVAR = 3, PEDIDO_TEXTO = 4;
     // sobe a cada mudança neste Java: página publicada com casca maior pede APK novo (ela pode usar algo que esta não tem)
-    static final int CASCA = 3;
+    static final int CASCA = 4;
     private static final String FONTE = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/publicado/";
     private static final String APK = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/android/apk/KOFlibrary.apk";
 
@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     private volatile boolean paginaPronta = false, leitorAberto = false;
     private String paraAbrir;          // PDF que chegou por "Abrir com" antes da página carregar
     private String paraSalvar;
+    private byte[] paraSalvarBin;   // imagem (o cartão do mês) em vez de texto
     private final Map<Integer, String[]> respostas = new ConcurrentHashMap<Integer, String[]>();
     private final Map<Integer, CountDownLatch> esperas = new ConcurrentHashMap<Integer, CountDownLatch>();
     private final AtomicInteger pedidos = new AtomicInteger();
@@ -257,9 +258,22 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void salvar(String nome, String mime, String texto) {
             paraSalvar = texto;
+            paraSalvarBin = null;
             final Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType(mime == null || mime.isEmpty() ? "text/plain" : mime);
+            i.putExtra(Intent.EXTRA_TITLE, nome);
+            runOnUiThread(new Runnable() { public void run() { startActivityForResult(i, PEDIDO_SALVAR); } });
+        }
+
+        /** Salvar um arquivo binário (a imagem do cartão do mês, em base64) onde a pessoa escolher. */
+        @JavascriptInterface
+        public void salvarBinario(String nome, String mime, String base64) {
+            paraSalvarBin = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+            paraSalvar = null;
+            final Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType(mime);
             i.putExtra(Intent.EXTRA_TITLE, nome);
             runOnUiThread(new Runnable() { public void run() { startActivityForResult(i, PEDIDO_SALVAR); } });
         }
@@ -347,17 +361,18 @@ public class MainActivity extends Activity {
                 js("window.__textoAberto && window.__textoAberto(" + JSONObject.quote(t) + ")");
             } }).start();
         } else if (pedido == PEDIDO_SALVAR) {
-            if (resultado == RESULT_OK && dados != null && dados.getData() != null && paraSalvar != null) {
+            if (resultado == RESULT_OK && dados != null && dados.getData() != null && (paraSalvar != null || paraSalvarBin != null)) {
                 try {
                     OutputStream o = getContentResolver().openOutputStream(dados.getData());
-                    o.write(paraSalvar.getBytes("UTF-8"));
+                    o.write(paraSalvarBin != null ? paraSalvarBin : paraSalvar.getBytes("UTF-8"));
                     o.close();
-                    Toast.makeText(this, "anotações salvas", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, paraSalvarBin != null ? "imagem salva" : "arquivo salvo", Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
                     Toast.makeText(this, "não consegui salvar o arquivo", Toast.LENGTH_LONG).show();
                 }
             }
             paraSalvar = null;
+            paraSalvarBin = null;
         }
     }
 

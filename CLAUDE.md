@@ -63,6 +63,17 @@ Saída: **um html só** (`dist/KOFlibrary.html`, ~2,4 MB) que abre por file:// n
 - .bat testado no Wine (apt install wine64; curl de mentira .cmd): Wine dá `||` falso depois de `call` e não tem
   PowerShell nem `where`. Endereço codificado pelo PowerShell ([uri]...AbsoluteUri), senão caminho direto.
 
+## v2 estatísticas (branch `estatisticas`, 26/10)
+- IndexedDB v2: loja `diario` (keyPath dia 'AAAA-MM-DD'): `por[aparelho] = {s, p, h[24], t[ids terminados], b{id: s}}`.
+  Cada aparelho só escreve a sua parte -> juntar = máximo por campo (`juntarDiario`, idempotente). Vai na sincronia e no
+  backup (`pacoteEstatisticas`: diario, metas, metasEm, conquistas). `marcarTerminado(l)` = único jeito de terminar.
+- Kof `Estatisticas.kf`: sequencia/recorde (MIN_DIA 300 s; hoje sem leitura não quebra), nivel 0..4, esperado/porcento/
+  previsao das metas, horaFavorita/tipoLeitor. Metas = `config.metas` [{periodo dia|semana|mes|ano, tipo livros|paginas|
+  minutos, alvo}] (a pessoa escolhe TUDO). 17 conquistas em `CONQUISTAS` (config.conquistas {id: quando}).
+- Tela `#estatisticas`: gráfico SVG de uma série (7/30 dias, dica no hover), calendário (color-mix do destaque),
+  retrospectiva, conquistas, cartão do mês (canvas 1080x1350; APK `salvarBinario`, CASCA 4).
+- Teste: testes/estatisticas.cjs (1 ano de diário gerado).
+
 ## Como falar com o Marcelo
 Português do Brasil, informal, direto; ele escreve rápido por voz (muitos erros de digitação). Liga pra economia de
 tokens: fazer só o que pediu. Commits em português, sem nome de modelo de IA. Não abrir PR sem ele pedir.

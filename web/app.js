@@ -61,13 +61,12 @@ const Banco = {
   db: null,
   abrir() {
     return new Promise((ok, erro) => {
-      const r = indexedDB.open('koflibrary', 1);
-      r.onupgradeneeded = () => {
+      const r = indexedDB.open('koflibrary', 2);
+      r.onupgradeneeded = () => {   // v1: livros/capas/arquivos/config; v2: + diario (estatísticas)
         const db = r.result;
-        db.createObjectStore('livros', { keyPath: 'id' });
-        db.createObjectStore('capas');
-        db.createObjectStore('arquivos');
-        db.createObjectStore('config');
+        for (const [loja, chave] of [['livros', { keyPath: 'id' }], ['capas'], ['arquivos'], ['config'], ['diario', { keyPath: 'dia' }]]) {
+          if (!db.objectStoreNames.contains(loja)) db.createObjectStore(loja, chave);
+        }
       };
       r.onsuccess = () => { this.db = r.result; ok(); };
       r.onerror = () => erro(r.error);
@@ -393,7 +392,7 @@ function desenharContinuar() {
         el('div', { class: 'rotulo' }, 'Continuar lendo'),
         el('h2', {}, nomeExibido(l)),
         el('div', { class: 'autor' }, l.autor || ''),
-        el('div', { class: 'pct' }, `página ${l.pagina} de ${l.paginas || '?'} · ${pct(l)}% · ${K.Leitura.tempo(l.segundos)} lidos`),
+        el('div', { class: 'pct' }, `página ${l.pagina} de ${l.paginas || '?'} · ${pct(l)}% · ${K.Leitura.tempo(l.segundos)} lidos` + (() => { const s = sequencias().atual; return s > 1 ? ` · 🔥 ${s} dias seguidos` : ''; })()),
         el('div', { class: 'progresso' }, el('i', { style: `width:${pct(l)}%` })),
         el('div', { class: 'pct' }, l.paginas ? K.Leitura.faltam(l.pagina, l.paginas, l.segundos, l.paginasLidas) : ''),
         el('button', { class: 'principal ler' }, '📖 Continuar'))),
@@ -420,7 +419,7 @@ function editar(l) {
   $('#edTitulo').value = l.titulo; $('#edAutor').value = l.autor; $('#edTerminado').checked = !!l.terminado;
   d.onclose = async () => {
     if (d.returnValue === 'ok') {
-      l.titulo = $('#edTitulo').value.trim() || l.titulo; l.autor = $('#edAutor').value.trim(); l.terminado = $('#edTerminado').checked; l.editadoEm = Date.now();
+      l.titulo = $('#edTitulo').value.trim() || l.titulo; l.autor = $('#edAutor').value.trim(); if ($('#edTerminado').checked) marcarTerminado(l); else l.terminado = false; l.editadoEm = Date.now();
       normal.delete(l.id); await salvarLivro(l);
     } else if (d.returnValue === 'remover') {
       if (!confirm(`Tirar "${l.titulo}" da biblioteca? O arquivo no seu computador não é apagado.` + (l.notas.length ? ' As anotações deste livro vão junto.' : ''))) return;
@@ -613,10 +612,10 @@ function mudouPagina(n) {
   if (!l) return;
   if (n !== L.atual) {
     L.atual = n;
-    if (n > L.maxVista) { contar(l, 'paginasPor', 'paginasLidas', n - L.maxVista); L.maxVista = n; }
+    if (n > L.maxVista) { contar(l, 'paginasPor', 'paginasLidas', n - L.maxVista); anotarLeitura(l, 0, n - L.maxVista); L.maxVista = n; }
   }
   $('#lPagina').value = n; $('#lTotal').textContent = '/ ' + L.doc.numPages;
-  if (l.pagina !== n) { l.pagina = n; l.lido = Date.now(); if (n >= L.doc.numPages) l.terminado = true; salvarDepois(l); }
+  if (l.pagina !== n) { l.pagina = n; l.lido = Date.now(); if (n >= L.doc.numPages) marcarTerminado(l); salvarDepois(l); }
   $('#lInfo').textContent = `${K.Leitura.porcento(n, L.doc.numPages)}% · ${K.Leitura.faltam(n, L.doc.numPages, l.segundos, l.paginasLidas)}`;
   $('#notaPag').textContent = n;
   marcarBotoes();
@@ -770,6 +769,7 @@ setInterval(() => {
   const l = L.livro;
   if (!l || document.hidden || Date.now() - L.ultimaAcao > 120000) return;
   contar(l, 'segundosPor', 'segundos', 1);
+  anotarLeitura(l, 1, 0);
   if (l.segundos % 15 === 0) salvarDepois(l);
 }, 1000);
 for (const ev of ['keydown', 'wheel', 'pointerdown', 'pointermove', 'touchstart']) addEventListener(ev, () => (L.ultimaAcao = Date.now()), { passive: true });
@@ -790,6 +790,17 @@ function ligarEventos() {
   $('#btImportarBackup').onclick = importarBackup;
   $('#arquivoBackup').onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restaurarBackup(await f.text()); };
   $('#btRelatar').onclick = abrirRelatorio;
+  $('#btEstatisticas').onclick = abrirEstatisticas;
+  $('#btEstVoltar').onclick = fecharEstatisticas;
+  $('#btCartao').onclick = baixarCartao;
+  for (const b of document.querySelectorAll('#estFaixa button')) b.onclick = () => { faixaGrafico = +b.dataset.n; desenharEstatisticas(); };
+  $('#estNova').onsubmit = (e) => {
+    e.preventDefault();
+    const alvo = parseInt($('#metaAlvo').value, 10);
+    if (!(alvo > 0)) { toast('Diga quanto: um número maior que zero.'); return; }
+    salvarMetas([...(config.metas || []), { id: Date.now().toString(36), periodo: $('#metaPeriodo').value, tipo: $('#metaTipo').value, alvo }]);
+    $('#metaAlvo').value = '';
+  };
   $('#btCopiarRelatorio').onclick = copiarRelatorio;
   $('#busca').oninput = () => { limiteGrade = 240; desenharBiblioteca(); };
   $('#ordem').onchange = async () => { await guardarConfig('ordem', $('#ordem').value); desenharBiblioteca(); };
@@ -849,6 +860,7 @@ function ligarEventos() {
   addEventListener('keydown', (e) => {
     // caixinha e régua do painel não seguram as teclas (só campo de texto e lista)
     if (e.target.matches('input:not([type=checkbox]):not([type=range]), textarea, select') || document.querySelector('dialog[open]')) return;
+    if (!$('#estatisticas').hidden) { if (e.key === 'Escape') fecharEstatisticas(); return; }
     if ($('#leitor').hidden) {
       if (e.key === '/' || (e.ctrlKey && e.key === 'f')) { e.preventDefault(); $('#busca').focus(); }
       return;
@@ -1148,7 +1160,7 @@ async function mostrar(n, voltando = false) {
   $('#fimCap').hidden = true;
   L.mostradas = pares;
   mudouPagina(pares[0]);
-  if (pares[pares.length - 1] >= doc.numPages && L.livro && !L.livro.terminado) { L.livro.terminado = true; salvarDepois(L.livro); }
+  if (pares[pares.length - 1] >= doc.numPages && L.livro && !L.livro.terminado) { marcarTerminado(L.livro); salvarDepois(L.livro); }
   marcarPaginas();
   // já deixa as próximas prontas (virar é na hora)
   for (let k = pares[pares.length - 1] + 1; k <= Math.min(doc.numPages, pares[pares.length - 1] + 4); k++) doc.bitmap(k).catch(() => {});
@@ -1175,6 +1187,360 @@ async function mudarManga(m) {
   desenharPainelTemas();
 }
 
+// ---------------------------------------------------------------- diário de leitura, metas e conquistas (📊)
+// Cada dia guarda, por aparelho, os segundos lidos, as páginas, os segundos por hora do dia, os livros terminados e
+// os segundos de cada livro. Cada aparelho só escreve a sua parte, então juntar (sincronia, backup) é pegar o maior
+// valor de cada campo: nunca conta duas vezes. As contas (sequência, metas, níveis do calendário) são do Kof.
+const diario = new Map();   // 'AAAA-MM-DD' -> { dia, por: { aparelho: { s, p, h[24], t[ids], b{id: s} } } }
+const dois = (n) => String(n).padStart(2, '0');
+const diaDe = (d = new Date()) => `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}`;
+const MIN_DIA = 300;   // 5 minutos lendo = o dia conta na sequência
+let diarioSujo = false;
+function parteVazia() { return { s: 0, p: 0, h: new Array(24).fill(0), t: [], b: {} }; }
+function minhaParte() {
+  const k = diaDe();
+  let d = diario.get(k);
+  if (!d) { d = { dia: k, por: {} }; diario.set(k, d); }
+  return d.por[config.aparelho] || (d.por[config.aparelho] = parteVazia());
+}
+function anotarLeitura(l, seg, pags) {
+  const m = minhaParte();
+  m.s += seg; m.p += pags; m.h[new Date().getHours()] += seg;
+  if (l && seg) m.b[l.id] = (m.b[l.id] || 0) + seg;
+  diarioSujo = true;
+}
+function marcarTerminado(l) {
+  if (l.terminado) return;
+  l.terminado = true;
+  const m = minhaParte();
+  if (!m.t.includes(l.id)) m.t.push(l.id);
+  diarioSujo = true;
+  salvarDiario();
+}
+async function salvarDiario() {
+  if (!diarioSujo) return;
+  diarioSujo = false;
+  const d = diario.get(diaDe());
+  if (d) { await Banco.put('diario', d); marcarBackup(); }
+}
+setInterval(salvarDiario, 15000);
+// soma de todos os aparelhos num dia
+function totalDia(d) {
+  const r = { s: 0, p: 0, h: new Array(24).fill(0), t: new Set(), b: {} };
+  if (!d) return r;
+  for (const m of Object.values(d.por)) {
+    r.s += m.s || 0; r.p += m.p || 0;
+    (m.h || []).forEach((v, i) => (r.h[i] += v || 0));
+    for (const id of m.t || []) r.t.add(id);
+    for (const [id, v] of Object.entries(m.b || {})) r.b[id] = (r.b[id] || 0) + v;
+  }
+  return r;
+}
+function juntarDiario(lista) {
+  for (const dele of lista || []) {
+    if (!dele || !dele.dia || !dele.por) continue;
+    const meu = diario.get(dele.dia) || { dia: dele.dia, por: {} };
+    for (const [ap, m] of Object.entries(dele.por)) {
+      const x = meu.por[ap] || (meu.por[ap] = parteVazia());
+      x.s = Math.max(x.s, m.s || 0); x.p = Math.max(x.p, m.p || 0);
+      for (let i = 0; i < 24; i++) x.h[i] = Math.max(x.h[i] || 0, (m.h || [])[i] || 0);
+      x.t = [...new Set([...x.t, ...(m.t || [])])];
+      for (const [id, v] of Object.entries(m.b || {})) x.b[id] = Math.max(x.b[id] || 0, v);
+    }
+    diario.set(dele.dia, meu);
+    Banco.put('diario', meu);
+  }
+}
+// metas: a pessoa escolhe período, o quê e quanto (várias ao mesmo tempo)
+function juntarMetas(dele) {
+  if (dele && Array.isArray(dele.metas) && (dele.metasEm || 0) > (config.metasEm || 0)) {
+    guardarConfig('metas', dele.metas); guardarConfig('metasEm', dele.metasEm);
+  }
+  if (dele && dele.conquistas) guardarConfig('conquistas', { ...dele.conquistas, ...(config.conquistas || {}) });
+}
+function pacoteEstatisticas() {
+  return { diario: [...diario.values()], metas: config.metas || [], metasEm: config.metasEm || 0, conquistas: config.conquistas || {} };
+}
+
+// segundos por dia dos últimos n dias (o último é hoje), no formato que o Kof lê
+function ultimosDias(n) {
+  const seg = new Int32Array(n), dias = [];
+  const d = new Date(); d.setHours(12, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const x = new Date(d); x.setDate(d.getDate() - i);
+    const k = diaDe(x); dias.push({ k, data: x, tot: totalDia(diario.get(k)) });
+    seg[n - 1 - i] = dias[dias.length - 1].tot.s;
+  }
+  return { seg, dias };
+}
+function sequencias() {
+  const { seg } = ultimosDias(1100);
+  return { atual: K.Estatisticas.sequencia(seg, seg.length, MIN_DIA), recorde: K.Estatisticas.recorde(seg, seg.length, MIN_DIA) };
+}
+const PERIODOS = { dia: 'por dia', semana: 'por semana', mes: 'por mês', ano: 'por ano' };
+const TIPOS = { livros: ['livros/volumes terminados', '📚'], paginas: ['páginas', '📄'], minutos: ['minutos lendo', '⏱️'] };
+function janela(periodo) {
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  let ini = new Date(hoje), total = 1, passado = 1;
+  if (periodo === 'semana') { const w = (hoje.getDay() + 6) % 7; ini.setDate(hoje.getDate() - w); total = 7; passado = w + 1; }
+  else if (periodo === 'mes') { ini.setDate(1); total = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); passado = hoje.getDate(); }
+  else if (periodo === 'ano') { ini = new Date(hoje.getFullYear(), 0, 1, 12); total = (new Date(hoje.getFullYear(), 11, 31) - new Date(hoje.getFullYear(), 0, 0)) / 864e5; passado = Math.round((hoje - ini) / 864e5) + 1; }
+  return { ini, total, passado };
+}
+function feitoNa(meta) {
+  const { ini, total, passado } = janela(meta.periodo);
+  let s = 0, p = 0; const t = new Set();
+  for (let i = 0; i < passado; i++) {
+    const x = new Date(ini); x.setDate(ini.getDate() + i);
+    const tot = totalDia(diario.get(diaDe(x)));
+    s += tot.s; p += tot.p; tot.t.forEach((id) => t.add(id));
+  }
+  const feito = meta.tipo === 'livros' ? t.size : meta.tipo === 'paginas' ? p : Math.floor(s / 60);
+  return { feito, total, passado, ini };
+}
+function situacaoMeta(meta) {
+  const { feito, total, passado, ini } = feitoNa(meta);
+  const E = K.Estatisticas, alvo = meta.alvo;
+  const pc = E.porcento(feito, alvo), esperado = E.esperado(alvo, passado, total);
+  let txt;
+  if (feito >= alvo) txt = '✅ Meta batida!';
+  else if (meta.periodo === 'dia') txt = `faltam ${alvo - feito} hoje`;
+  else {
+    const prev = E.previsao(feito, alvo, passado);
+    const quando = prev > 0 && prev <= total ? new Date(ini.getTime() + (prev - 1) * 864e5).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+    txt = (feito > esperado ? '👍 adiantado' : feito === esperado ? '👌 em dia' : `⏳ atrasado ${esperado - feito}`) + (quando ? ` · nesse ritmo bate em ${quando}` : prev < 0 ? '' : ` · nesse ritmo fecha com ~${Math.floor((feito * total) / passado)}`);
+  }
+  return { feito, pc, txt, batida: feito >= alvo };
+}
+
+// conquistas
+const CONQUISTAS = [
+  ['primeiro', '📗', 'Primeiro livro', 'Terminou o primeiro livro ou volume', (c) => c.terminados >= 1],
+  ['dez', '📚', 'Estante cheia', '10 livros ou volumes terminados', (c) => c.terminados >= 10],
+  ['mil', '📄', 'Mil páginas', '1.000 páginas lidas', (c) => c.paginas >= 1000],
+  ['dezmil', '🏔️', 'Dez mil páginas', '10.000 páginas lidas', (c) => c.paginas >= 10000],
+  ['seq7', '🔥', 'Semana de fogo', '7 dias seguidos lendo', (c) => c.recorde >= 7],
+  ['seq30', '🔥', 'Mês de fogo', '30 dias seguidos lendo', (c) => c.recorde >= 30],
+  ['seq100', '☄️', 'Cem dias', '100 dias seguidos lendo', (c) => c.recorde >= 100],
+  ['maratona', '🏃', 'Maratona', '3 horas lendo num dia só', (c) => c.maxDia >= 3 * 3600],
+  ['coruja', '🦉', 'Coruja', 'Leu entre meia-noite e 4 da manhã', (c) => c.madrugada],
+  ['cedo', '🌅', 'Madrugador', 'Leu entre 5 e 7 da manhã', (c) => c.cedo],
+  ['serie', '🗾', 'Maratonou a série', '10 capítulos/volumes da mesma série terminados', (c) => c.maiorSerie >= 10],
+  ['otaku', '⛩️', 'Otaku', '50 capítulos/volumes de mangá terminados', (c) => c.mangas >= 50],
+  ['classico', '🏛️', 'Clássico', 'Terminou um livro de 500 páginas ou mais', (c) => c.classico],
+  ['notas', '📝', 'Anotador', '10 notas escritas', (c) => c.notas >= 10],
+  ['dois', '📱', 'Em todo lugar', 'Leu no PC e no celular', (c) => c.aparelhos >= 2],
+  ['meta', '🎯', 'Na mosca', 'Bateu uma meta', (c) => c.metaBatida],
+  ['cem', '🏛', 'Bibliotecário', '100 itens na biblioteca', (c) => c.itens >= 100],
+];
+function contexto() {
+  const todos = [...livros.values()];
+  const term = todos.filter((l) => l.terminado);
+  const porSerie = {};
+  for (const l of term) if (ehQuadrinho(l)) porSerie[l.serie] = (porSerie[l.serie] || 0) + 1;
+  let maxDia = 0, madrugada = false, cedo = false; const aps = new Set();
+  for (const d of diario.values()) {
+    const t = totalDia(d); maxDia = Math.max(maxDia, t.s);
+    if (t.h.slice(0, 4).some((v) => v >= 60)) madrugada = true;
+    if (t.h.slice(5, 7).some((v) => v >= 60)) cedo = true;
+    for (const [ap, m] of Object.entries(d.por)) if (m.s >= 60) aps.add(ap);
+  }
+  return {
+    terminados: term.length, paginas: todos.reduce((a, l) => a + (l.paginasLidas || 0), 0), recorde: sequencias().recorde,
+    maxDia, madrugada, cedo, maiorSerie: Math.max(0, ...Object.values(porSerie)), mangas: term.filter(ehQuadrinho).length,
+    classico: term.some((l) => !ehQuadrinho(l) && l.paginas >= 500), notas: todos.reduce((a, l) => a + (l.notas || []).length, 0),
+    aparelhos: aps.size, metaBatida: (config.metas || []).some((m) => situacaoMeta(m).batida) || !!(config.conquistas || {}).meta, itens: todos.length,
+  };
+}
+async function checarConquistas(silencioso) {
+  const c = contexto(), tem = { ...(config.conquistas || {}) };
+  const novas = CONQUISTAS.filter(([id, , , , ok]) => !tem[id] && ok(c));
+  if (!novas.length) return;
+  for (const [id] of novas) tem[id] = Date.now();
+  await guardarConfig('conquistas', tem);
+  if (!silencioso) toast(novas.map(([, ic, nome]) => `🏆 Conquista: ${ic} ${nome}`).join(' · '), 5000);
+}
+setInterval(() => { if (Banco.db) checarConquistas(); }, 60000);
+
+// ---- tela 📊
+const fmtMin = (s) => (s < 3600 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1).replace('.', ',') + ' h');
+let faixaGrafico = 7;
+function cartaoNumero(rotulo, valor, detalhe) {
+  return el('div', { class: 'est-cartao' }, el('div', { class: 'rotulo' }, rotulo), el('div', { class: 'valor' }, valor), el('div', { class: 'det' }, detalhe || ' '));
+}
+function dicaGrafico(e, texto) {
+  const d = $('#dicaGrafico'); d.textContent = texto; d.hidden = false;
+  const x = (e.touches ? e.touches[0] : e).clientX, y = (e.touches ? e.touches[0] : e).clientY;
+  d.style.left = Math.min(innerWidth - d.offsetWidth - 8, Math.max(8, x - d.offsetWidth / 2)) + 'px';
+  d.style.top = Math.max(8, y - d.offsetHeight - 14) + 'px';
+}
+function esconderDica() { $('#dicaGrafico').hidden = true; }
+// barras: minutos por dia (uma série só, cor de destaque, ponta arredondada presa na base, sem número em cada barra)
+function graficoBarras(n) {
+  const { dias } = ultimosDias(n);
+  // o desenho tem a largura da tela (no celular os números do eixo ficam do tamanho certo)
+  const W = Math.max(320, Math.min(900, ($('#estGrafico').clientWidth || 720) - 12)), H = 200, base = 176, topo = 14;
+  const max = Math.max(600, ...dias.map((d) => d.tot.s));
+  const larg = W / n, barra = Math.max(3, larg - 2);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'grafico'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Minutos lidos por dia, últimos ${n} dias`);
+  const ns = (t, a) => { const e = document.createElementNS('http://www.w3.org/2000/svg', t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+  // grade: só a linha do maior valor, discreta
+  svg.append(ns('line', { x1: 0, x2: W, y1: topo, y2: topo, class: 'grade' }), ns('line', { x1: 0, x2: W, y1: base, y2: base, class: 'eixo' }));
+  const rt = ns('text', { x: 2, y: topo - 3, class: 'rotulo-eixo' }); rt.textContent = fmtMin(max); svg.append(rt);
+  dias.forEach((d, i) => {
+    const h = Math.round(((base - topo) * d.tot.s) / max), x = i * larg + (larg - barra) / 2;
+    if (h > 0) {
+      const r = Math.min(4, barra / 2, h);
+      svg.append(ns('path', { class: 'barra', d: `M${x},${base} V${base - h + r} Q${x},${base - h} ${x + r},${base - h} H${x + barra - r} Q${x + barra},${base - h} ${x + barra},${base - h + r} V${base} Z` }));
+    }
+    const alvo = ns('rect', { x: i * larg, y: 0, width: larg, height: H, class: 'alvo' });
+    const txt = `${d.data.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}: ${d.tot.s ? fmtMin(d.tot.s) + ' · ' + d.tot.p + ' pág.' : 'não leu'}`;
+    alvo.addEventListener('pointerenter', (e) => dicaGrafico(e, txt)); alvo.addEventListener('pointermove', (e) => dicaGrafico(e, txt));
+    alvo.addEventListener('pointerleave', esconderDica);
+    svg.append(alvo);
+    if (n <= 7 || i % 5 === 4 || i === n - 1) {
+      const t = ns('text', { x: i * larg + larg / 2, y: H - 4, class: 'rotulo-eixo', 'text-anchor': 'middle' });
+      t.textContent = n <= 7 ? d.data.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '') : d.data.getDate();
+      svg.append(t);
+    }
+  });
+  return svg;
+}
+// calendário do ano (estilo GitHub): uma coluna por semana, nível 0..4 do Kof
+function calendario() {
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const ini = new Date(hoje); ini.setDate(hoje.getDate() - 364 - ((hoje.getDay() + 6) % 7));
+  const grade = el('div', { class: 'calendario', role: 'img', 'aria-label': 'Calendário de leitura do último ano' });
+  for (let x = new Date(ini); x <= hoje; x.setDate(x.getDate() + 1)) {
+    const tot = totalDia(diario.get(diaDe(x)));
+    const nv = K.Estatisticas.nivel(tot.s);
+    const txt = `${x.toLocaleDateString('pt-BR')}: ${tot.s ? fmtMin(tot.s) : 'não leu'}`;
+    const c = el('i', { class: 'n' + nv, style: `grid-row:${((x.getDay() + 6) % 7) + 1}` });
+    c.addEventListener('pointerenter', (e) => dicaGrafico(e, txt)); c.addEventListener('pointerleave', esconderDica);
+    grade.append(c);
+  }
+  return el('div', { class: 'cal-caixa' }, grade,
+    el('div', { class: 'cal-legenda' }, 'menos ', ...[0, 1, 2, 3, 4].map((n) => el('i', { class: 'n' + n })), ' mais'));
+}
+function desenharMetas() {
+  const box = $('#estMetas'); box.replaceChildren();
+  const metas = config.metas || [];
+  if (!metas.length) box.append(el('p', { class: 'nada' }, 'Nenhuma meta ainda. Crie a sua abaixo ou use uma sugestão.'));
+  for (const m of metas) {
+    const s = situacaoMeta(m);
+    box.append(el('div', { class: 'meta' + (s.batida ? ' batida' : '') },
+      el('div', { class: 'meta-topo' }, el('b', {}, `${TIPOS[m.tipo][1]} ${m.alvo} ${TIPOS[m.tipo][0]} ${PERIODOS[m.periodo]}`),
+        el('button', { class: 'x', title: 'Apagar meta', onclick: () => salvarMetas(metas.filter((x) => x !== m)) }, '✕')),
+      el('div', { class: 'progresso grosso' }, el('i', { style: `width:${s.pc}%` })),
+      el('div', { class: 'pct' }, el('span', {}, `${s.feito} de ${m.alvo}`), el('span', {}, s.txt))));
+  }
+  const sug = $('#estSugestoes'); sug.replaceChildren();
+  for (const [p, t, a, nome] of [['mes', 'livros', 2, '📚 2 livros por mês'], ['dia', 'minutos', 20, '⏱️ 20 min por dia'], ['ano', 'livros', 24, '🗾 24 volumes no ano'], ['semana', 'paginas', 200, '📄 200 páginas por semana']]) {
+    if (!metas.some((m) => m.periodo === p && m.tipo === t)) sug.append(el('button', { class: 'chip', onclick: () => salvarMetas([...metas, { id: Date.now().toString(36), periodo: p, tipo: t, alvo: a }]) }, nome));
+  }
+}
+async function salvarMetas(metas) {
+  await guardarConfig('metas', metas); await guardarConfig('metasEm', Date.now());
+  marcarBackup(); desenharMetas(); checarConquistas();
+}
+function retrospectiva() {
+  const ano = new Date().getFullYear(), h = new Array(24).fill(0), porLivro = {}, porMes = new Array(12).fill(0);
+  let maxPag = 0, diaMaxPag = '';
+  for (const d of diario.values()) {
+    if (!d.dia.startsWith(ano + '-')) continue;
+    const t = totalDia(d);
+    t.h.forEach((v, i) => (h[i] += v));
+    for (const [id, v] of Object.entries(t.b)) porLivro[id] = (porLivro[id] || 0) + v;
+    porMes[+d.dia.slice(5, 7) - 1] += t.s;
+    if (t.p > maxPag) { maxPag = t.p; diaMaxPag = d.dia; }
+  }
+  // série (mangá) ou livro com mais tempo
+  const porNome = {};
+  for (const [id, s] of Object.entries(porLivro)) { const l = livros.get(id); if (!l) continue; const k = ehQuadrinho(l) ? '🗾 ' + l.serie : l.titulo; porNome[k] = (porNome[k] || 0) + s; }
+  const top = Object.entries(porNome).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const mes = porMes.indexOf(Math.max(...porMes));
+  const hora = K.Estatisticas.horaFavorita(Int32Array.from(h));
+  return { ano, top, mes: porMes[mes] ? new Date(ano, mes, 1).toLocaleDateString('pt-BR', { month: 'long' }) : '', hora, tipo: K.Estatisticas.tipoLeitor(hora), maxPag, diaMaxPag };
+}
+function desenharEstatisticas() {
+  const hoje = totalDia(diario.get(diaDe()));
+  const sem = feitoNa({ periodo: 'semana', tipo: 'minutos' }), semP = feitoNa({ periodo: 'semana', tipo: 'paginas' });
+  const ano = feitoNa({ periodo: 'ano', tipo: 'livros' });
+  const { atual, recorde } = sequencias();
+  $('#estCartoes').replaceChildren(
+    cartaoNumero('Hoje', fmtMin(hoje.s), `${hoje.p} páginas`),
+    cartaoNumero('Esta semana', fmtMin(sem.feito * 60), `${semP.feito} páginas`),
+    cartaoNumero('🔥 Sequência', atual + (atual === 1 ? ' dia' : ' dias'), `recorde: ${recorde} · conta a partir de 5 min/dia`),
+    cartaoNumero(`Em ${new Date().getFullYear()}`, `${ano.feito} terminados`, 'livros e volumes'));
+  desenharMetas();
+  const g = $('#estGrafico'); g.replaceChildren(graficoBarras(faixaGrafico));
+  for (const b of document.querySelectorAll('#estFaixa button')) b.classList.toggle('ativo', +b.dataset.n === faixaGrafico);
+  $('#estCalendario').replaceChildren(calendario());
+  const cx = $('#estCalendario .cal-caixa'); cx.scrollLeft = cx.scrollWidth;   // começa mostrando os dias de agora
+  const r = retrospectiva();
+  $('#estRetro').replaceChildren(
+    cartaoNumero('Mais lidos', r.top.length ? r.top[0][0] : '—', r.top.slice(1).map((x) => x[0]).join(' · ')),
+    cartaoNumero('Seu horário', r.hora >= 0 ? `${dois(r.hora)}h` : '—', r.tipo),
+    cartaoNumero('Mês recorde', r.mes || '—', ''),
+    cartaoNumero('Mais páginas num dia', r.maxPag || '—', r.diaMaxPag ? new Date(r.diaMaxPag + 'T12:00').toLocaleDateString('pt-BR') : ''));
+  const tem = config.conquistas || {};
+  $('#estConquistas').replaceChildren(...CONQUISTAS.map(([id, ic, nome, desc]) => el('div', { class: 'conquista' + (tem[id] ? ' tem' : ''), title: desc + (tem[id] ? ' · ' + quando(tem[id]) : ' (ainda não)') },
+    el('span', { class: 'ic' }, ic), el('b', {}, nome), el('small', {}, desc))));
+  $('#estConqConta').textContent = `${Object.keys(tem).length} de ${CONQUISTAS.length}`;
+}
+async function abrirEstatisticas() {
+  await salvarDiario();
+  await checarConquistas(true);
+  $('#biblioteca').hidden = true; $('#estatisticas').hidden = false;
+  desenharEstatisticas();
+  scrollTo(0, 0);
+}
+function fecharEstatisticas() { $('#estatisticas').hidden = true; $('#biblioteca').hidden = false; esconderDica(); desenharBiblioteca(); }
+// cartão pra postar: o mês numa imagem 1080x1350
+function cartaoDoMes() {
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+  const g = c.getContext('2d'), cs = getComputedStyle(document.documentElement);
+  const cor = (v, p) => cs.getPropertyValue(v).trim() || p;
+  const fundo = cor('--fundo', '#1a110b'), painel = cor('--painel', '#2b1d14'), texto = cor('--texto', '#f3e6d8'), suave = cor('--suave', '#bfa58c'), dest = cor('--destaque', '#c08552');
+  g.fillStyle = fundo; g.fillRect(0, 0, 1080, 1350);
+  const hoje = new Date(), nomeMes = hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const mMin = feitoNa({ periodo: 'mes', tipo: 'minutos' }).feito, mPag = feitoNa({ periodo: 'mes', tipo: 'paginas' }).feito, mLiv = feitoNa({ periodo: 'mes', tipo: 'livros' }).feito;
+  const { atual } = sequencias();
+  g.fillStyle = dest; g.font = '700 46px system-ui, sans-serif'; g.fillText('📚 KOFlibrary', 80, 120);
+  g.fillStyle = texto; g.font = '700 74px system-ui, sans-serif'; g.fillText('Meu mês de leitura', 80, 230);
+  g.fillStyle = suave; g.font = '40px system-ui, sans-serif'; g.fillText(nomeMes, 80, 290);
+  const caixas = [[fmtMin(mMin * 60), 'lendo'], [String(mPag), 'páginas'], [String(mLiv), 'terminados'], [atual + ' 🔥', 'dias seguidos']];
+  caixas.forEach(([v, r], i) => {
+    const x = 80 + (i % 2) * 470, y = 360 + Math.floor(i / 2) * 260;
+    g.fillStyle = painel; g.beginPath(); g.roundRect(x, y, 440, 220, 28); g.fill();
+    g.fillStyle = texto; g.font = '700 84px system-ui, sans-serif'; g.fillText(v, x + 36, y + 120);
+    g.fillStyle = suave; g.font = '36px system-ui, sans-serif'; g.fillText(r, x + 36, y + 180);
+  });
+  const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1), porNome = {};
+  for (let x = new Date(ini); x <= hoje; x.setDate(x.getDate() + 1)) {
+    for (const [id, s] of Object.entries(totalDia(diario.get(diaDe(x))).b)) { const l = livros.get(id); if (l) { const k = ehQuadrinho(l) ? l.serie : l.titulo; porNome[k] = (porNome[k] || 0) + s; } }
+  }
+  const top = Object.entries(porNome).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  g.fillStyle = texto; g.font = '700 44px system-ui, sans-serif'; g.fillText('Mais lidos', 80, 940);
+  top.forEach(([nome, s], i) => {
+    g.fillStyle = dest; g.font = '700 40px system-ui, sans-serif'; g.fillText(`${i + 1}.`, 80, 1010 + i * 70);
+    g.fillStyle = texto; g.font = '40px system-ui, sans-serif';
+    let n = nome; while (g.measureText(n).width > 700 && n.length > 4) n = n.slice(0, -2);
+    g.fillText(n === nome ? nome : n + '…', 140, 1010 + i * 70);
+    g.fillStyle = suave; g.fillText(fmtMin(s), 880, 1010 + i * 70);
+  });
+  if (!top.length) { g.fillStyle = suave; g.font = '40px system-ui, sans-serif'; g.fillText('(nada lido este mês ainda)', 80, 1010); }
+  g.fillStyle = suave; g.font = '30px system-ui, sans-serif'; g.fillText('feito em Kof · github.com/Marcelao98/KOFLibrary', 80, 1290);
+  return c;
+}
+function baixarCartao() {
+  const c = cartaoDoMes(), nome = `KOFlibrary-${diaDe().slice(0, 7)}.png`;
+  if (APK) { APK.salvarBinario(nome, 'image/png', c.toDataURL('image/png').split(',')[1]); return; }
+  c.toBlob((b) => { const a = el('a', { href: URL.createObjectURL(b), download: nome }); document.body.append(a); a.click(); a.remove(); });
+}
+
 // ---------------------------------------------------------------- backup (.koflib) e relatar problema
 // Progresso, notas, marcadores e ajustes moram no banco do navegador: se ele for limpo, some tudo. O backup é um
 // JSON com os registros (sem os PDFs), no mesmo formato da sincronia. Importar junta com o que já tem (o mais novo
@@ -1186,7 +1552,7 @@ const BACKUP_NOME = 'KOFlibrary-backup.koflib';
 function montarBackup() {
   return JSON.stringify({
     formato: 'koflibrary-backup', versao: 1, criado: Date.now(), aparelho: config.aparelho, app: VERSAO,
-    livros: [...livros.values()].map(paraEnviar),
+    livros: [...livros.values()].map(paraEnviar), ...pacoteEstatisticas(),
     config: { temaApp: config.temaApp, leitura: config.leitura, manga: config.manga, ordem: config.ordem },
   });
 }
@@ -1199,6 +1565,7 @@ async function restaurarBackup(texto, silencioso) {
   }
   if (silencioso && b.aparelho === config.aparelho && (b.criado || 0) <= (config.backupFeito || 0)) return true;   // o meu mesmo
   juntarTodos(b.livros);
+  juntarDiario(b.diario); juntarMetas(b);
   for (const k of ['temaApp', 'leitura', 'manga', 'ordem']) {
     if (b.config && b.config[k] !== undefined && config[k] === undefined) await guardarConfig(k, b.config[k]);
   }
@@ -1336,6 +1703,7 @@ function iniciarCelular() {
     if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); return true; }
     if (!$('#fimCap').hidden) { $('#fimCap').hidden = true; return true; }
     if (!$('#leitor').hidden) { fecharLivro(); return true; }
+    if (!$('#estatisticas').hidden) { fecharEstatisticas(); return true; }
     if ($('#busca').value) { $('#busca').value = ''; desenharBiblioteca(); return true; }
     return false;
   };
@@ -1442,9 +1810,10 @@ function juntarTodos(lista) {
 // celular: o PC mandou os registros dele
 function receberSincronia(pedido) {
   juntarTodos(pedido.livros);
+  juntarDiario(pedido.diario); juntarMetas(pedido);
   if (L.livro) marcarPaginas();
   if ($('#leitor').hidden) desenharBiblioteca();
-  return { nome: 'celular', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar), temArquivo: [...fontes.keys()] };
+  return { nome: 'celular', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar), temArquivo: [...fontes.keys()], ...pacoteEstatisticas() };
 }
 
 // PC: o lado que chama
@@ -1474,9 +1843,10 @@ async function sincronizarCelular(silencioso) {
   try {
     statusSinc('🔄 Juntando progresso e notas...');
     const r = await pedir('/sincronizar', { method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ nome: 'PC', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar) }) });
+      body: JSON.stringify({ nome: 'PC', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar), ...pacoteEstatisticas() }) });
     const resp = await r.json();
     juntarTodos(resp.livros);
+    juntarDiario(resp.diario); juntarMetas(resp);
     if ($('#leitor').hidden) desenharBiblioteca(); else marcarPaginas();
     // os PDFs que o celular ainda não tem
     const tem = new Set(resp.temArquivo || []);
@@ -1545,7 +1915,8 @@ async function iniciar() {
   $('#versao').textContent = VERSAO.split(' ')[0];
   ligarEventos();
   try { await Banco.abrir(); } catch (e) { toast('O navegador não deixou guardar dados: ' + e.message, 8000); return; }
-  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem', 'aparelho', 'celular', 'manga', 'backupAuto', 'backupFeito']) config[k] = await Banco.get('config', k);
+  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem', 'aparelho', 'celular', 'manga', 'backupAuto', 'backupFeito', 'metas', 'metasEm', 'conquistas']) config[k] = await Banco.get('config', k);
+  for (const d of await Banco.todos('diario')) diario.set(d.dia, d);
   if (!config.aparelho) await guardarConfig('aparelho', (APK ? 'cel-' : 'pc-') + Math.random().toString(36).slice(2, 10));
   aplicarTemaApp(config.temaApp);
   if (config.ordem) $('#ordem').value = config.ordem;
@@ -1565,4 +1936,4 @@ async function iniciar() {
 iniciar();
 
 // pros testes
-window.KOFlibrary = { livros, fontes, L, temas, config, montarBackup, restaurarBackup, gravarBackupAuto, relatorio, adicionarPasta, ligarBackupAuto, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };
+window.KOFlibrary = { livros, fontes, L, temas, config, marcarTerminado, diario, diaDe, juntarDiario, sequencias, situacaoMeta, salvarMetas, checarConquistas, abrirEstatisticas, cartaoDoMes, montarBackup, restaurarBackup, gravarBackupAuto, relatorio, adicionarPasta, ligarBackupAuto, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };

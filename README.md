@@ -20,6 +20,21 @@ Quer que abra numa janela própria, sem barra de endereço? Deixe do lado do htm
 > Seus PDFs não saem do computador. O KOFlibrary guarda no navegador só o que é dele: capas, progresso, notas e temas.
 > A pasta fica lembrada (no Chrome/Edge); se o navegador pedir, é só clicar em **Liberar a pasta**.
 
+## 📊 Estatísticas, metas e conquistas
+
+Botão **📊** na biblioteca:
+- **Hoje, semana, 🔥 sequência de dias lendo** (conta a partir de 5 min por dia; o dia de hoje só quebra a sequência
+  quando acaba) e quantos você terminou no ano.
+- **🎯 Metas do seu jeito:** você escolhe o período (dia, semana, mês ou ano), o quê (livros/volumes terminados,
+  páginas ou minutos) e quanto, e pode ter várias. Cada uma diz se você está adiantado ou atrasado e quando bate,
+  nesse ritmo.
+- **Gráficos** dos últimos 7 e 30 dias e o **calendário do ano** (estilo GitHub).
+- **✨ Retrospectiva:** mais lidos, seu horário (🦉 coruja, 🌙 leitor da noite...), mês recorde.
+- **🏆 17 conquistas** (Semana de fogo, Maratona, Otaku, Clássico, Em todo lugar...).
+- **🖼️ Cartão do mês:** uma imagem pronta pra postar.
+
+PC e celular contam separado e somam na sincronia (nada é contado duas vezes); o backup leva tudo junto.
+
 ## 💾 Backup
 
 Progresso, notas, marcadores e temas ficam guardados no navegador (ou no app do celular). Pra não perder nada:

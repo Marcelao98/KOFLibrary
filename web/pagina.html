@@ -18,6 +18,7 @@
     <input id="busca" type="search" placeholder="Buscar por título, autor ou estante..." autocomplete="off">
     <button id="btPasta" title="Escolher a pasta dos seus livros">📁 Escolher pasta</button>
     <button id="btPdf" title="Adicionar arquivos soltos (PDF, mangá .cbz/.cbr)">➕ Arquivo</button>
+    <button id="btEstatisticas" title="Estatísticas, metas e conquistas">📊</button>
     <button id="btCelular" title="Celular: mandar livros e progresso pro KOFlibrary do celular">📱</button>
     <button id="btAjustes" title="Tema do aplicativo">⚙️</button>
   </header>
@@ -53,6 +54,46 @@
   <div id="grade"></div>
   <div id="maisGrade"></div>
   <footer class="rodape">KOFlibrary <span id="versao"></span> · escrito em <a href="https://github.com/KofLang/Kof4j" target="_blank" rel="noopener">Kof</a> · PDFs desenhados pelo <a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener">pdf.js</a></footer>
+</section>
+
+<!-- ===== Estatísticas ===== -->
+<section id="estatisticas" hidden>
+  <header class="topo">
+    <button id="btEstVoltar" title="Voltar (Esc)">← Biblioteca</button>
+    <div class="marca">📊 Suas leituras</div>
+    <button id="btCartao" title="Imagem do seu mês pra postar">🖼️ Cartão do mês</button>
+  </header>
+  <div id="estCartoes" class="est-cartoes"></div>
+
+  <h2>🎯 Metas</h2>
+  <div id="estMetas"></div>
+  <form id="estNova" class="est-nova">
+    <span>Nova meta:</span>
+    <input id="metaAlvo" type="number" min="1" inputmode="numeric" placeholder="quanto" aria-label="Quanto">
+    <select id="metaTipo" aria-label="O quê">
+      <option value="livros">livros/volumes terminados</option>
+      <option value="paginas">páginas</option>
+      <option value="minutos">minutos lendo</option>
+    </select>
+    <select id="metaPeriodo" aria-label="Período">
+      <option value="dia">por dia</option>
+      <option value="semana">por semana</option>
+      <option value="mes" selected>por mês</option>
+      <option value="ano">por ano</option>
+    </select>
+    <button class="principal">Criar</button>
+  </form>
+  <div id="estSugestoes" class="est-sugestoes"></div>
+
+  <h2>⏱️ Minutos lendo por dia <span id="estFaixa" class="faixa"><button data-n="7">7 dias</button><button data-n="30">30 dias</button></span></h2>
+  <div id="estGrafico"></div>
+  <h2>🗓️ O seu ano</h2>
+  <div id="estCalendario"></div>
+  <h2>✨ Retrospectiva do ano</h2>
+  <div id="estRetro" class="est-cartoes"></div>
+  <h2>🏆 Conquistas <small id="estConqConta"></small></h2>
+  <div id="estConquistas" class="conquistas"></div>
+  <div id="dicaGrafico" hidden></div>
 </section>
 
 <!-- ===== Leitor ===== -->

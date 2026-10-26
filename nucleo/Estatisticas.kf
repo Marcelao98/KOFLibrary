@@ -1,0 +1,115 @@
+package nucleo
+
+// Contas das estatísticas de leitura. A página monta um vetor com os segundos lidos por dia
+// (o último é hoje) e o Kof diz a sequência de dias, o recorde, médias, como está cada meta
+// e o "nível" de cada dia no calendário.
+class Estatisticas {
+    // dias seguidos lendo pelo menos `minimo` segundos, contando de hoje pra trás. Hoje ainda
+    // não bateu? Não quebra: conta a partir de ontem (o dia ainda não acabou).
+    public static Int sequencia(Int[] seg, Int n, Int minimo) {
+        var i = n - 1
+        if (i >= 0 && seg[i] < minimo) { i-- }
+        var r = 0
+        while (i >= 0 && seg[i] >= minimo) {
+            r++
+            i--
+        }
+        return r
+    }
+
+    public static Int recorde(Int[] seg, Int n, Int minimo) {
+        var melhor = 0
+        var atual = 0
+        var i = 0
+        while (i < n) {
+            if (seg[i] >= minimo) {
+                atual++
+                if (atual > melhor) { melhor = atual }
+            } else {
+                atual = 0
+            }
+            i++
+        }
+        return melhor
+    }
+
+    public static Int soma(Int[] v, Int ini, Int fim) {
+        var s = 0
+        var i = ini
+        while (i < fim) {
+            s = s + v[i]
+            i++
+        }
+        return s
+    }
+
+    // média só dos dias em que leu (segundos)
+    public static Int mediaDiasLidos(Int[] seg, Int n) {
+        var s = 0
+        var d = 0
+        var i = 0
+        while (i < n) {
+            if (seg[i] > 0) {
+                s = s + seg[i]
+                d++
+            }
+            i++
+        }
+        if (d == 0) { return 0 }
+        return s / d
+    }
+
+    // 0..4 pro calendário: nada, até 10 min, até 30, até 1 h, mais de 1 h
+    public static Int nivel(Int segundos) {
+        if (segundos <= 0) { return 0 }
+        if (segundos < 600) { return 1 }
+        if (segundos < 1800) { return 2 }
+        if (segundos < 3600) { return 3 }
+        return 4
+    }
+
+    // meta: quanto já devia ter feito até agora (alvo proporcional ao tempo que passou do período)
+    public static Int esperado(Int alvo, Int passado, Int total) {
+        if (total <= 0) { return alvo }
+        return alvo * passado / total
+    }
+
+    // 0..100
+    public static Int porcento(Int feito, Int alvo) {
+        if (alvo <= 0) { return 100 }
+        if (feito >= alvo) { return 100 }
+        return feito * 100 / alvo
+    }
+
+    // em quantas unidades de tempo do período bate a meta nesse ritmo (-1 = sem ritmo ainda)
+    public static Int previsao(Int feito, Int alvo, Int passado) {
+        if (feito >= alvo) { return passado }
+        if (feito <= 0 || passado <= 0) { return -1 }
+        return (alvo * passado + feito - 1) / feito
+    }
+
+    // a hora do dia com mais leitura (h[24] em segundos); -1 = não leu nada
+    public static Int horaFavorita(Int[] h) {
+        var melhor = -1
+        var max = 0
+        var i = 0
+        while (i < 24) {
+            if (h[i] > max) {
+                max = h[i]
+                melhor = i
+            }
+            i++
+        }
+        return melhor
+    }
+
+    // apelido pelo horário favorito
+    public static String tipoLeitor(Int hora) {
+        if (hora < 0) { return "" }
+        if (hora < 5) { return "🦉 Coruja (lê de madrugada)" }
+        if (hora < 9) { return "🌅 Madrugador (lê cedo)" }
+        if (hora < 12) { return "☕ Leitor da manhã" }
+        if (hora < 18) { return "🌤️ Leitor da tarde" }
+        return "🌙 Leitor da noite"
+    }
+}

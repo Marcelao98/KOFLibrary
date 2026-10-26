@@ -38,7 +38,7 @@ nucleo = re.sub(r"^//# sourceMappingURL=.*$", "", nucleo, flags=re.M)
 nucleo = re.sub(r"^main\(\);\s*$", "", nucleo, flags=re.M)
 # deslocamento por constante: o alvo JS passa por BigInt (lento); com número literal é o mesmo valor
 nucleo = re.sub(r"Number\(BigInt\.asIntN\(32, BigInt\((\d+)\)\)\)", r"\1", nucleo)
-classes = ["Temas", "Pintor", "Cor", "Nome", "Busca", "Leitura", "Zip", "Indice", "Capitulo", "Bordas"]
+classes = ["Temas", "Pintor", "Cor", "Nome", "Busca", "Leitura", "Zip", "Indice", "Capitulo", "Bordas", "Estatisticas"]
 for c in classes:
     if f"class nucleo_{c}" not in nucleo:
         sys.exit(f"juntar.py: nucleo_{c} não apareceu na saída do Kof")
