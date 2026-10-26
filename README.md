@@ -1,0 +1,84 @@
+# 📚 KOFlibrary
+
+**A sua biblioteca de PDFs: arraste a pasta, leia com o tema que descansa o olho, anote e continue de onde parou.**
+Irmão do [KOFstation](https://github.com/Marcelao98/KOFStation): o que o KOFstation é pros jogos, o KOFlibrary é pros livros.
+O núcleo é escrito em [Kof](https://github.com/KofLang/Kof4j), linguagem brasileira parceira do projeto, e os PDFs são desenhados pelo
+[pdf.js](https://github.com/mozilla/pdf.js) (Mozilla).
+
+<p align="center"><img src="docs/prints/biblioteca.jpg" alt="Biblioteca do KOFlibrary com o Continuar lendo e as capas" width="100%"></p>
+
+## ⬇️ Como usar
+
+1. Baixe o [**KOFlibrary.html**](https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/publicado/KOFlibrary.html)
+   (botão direito → *Salvar link como*).
+2. Dois cliques nele: abre no **Chrome** ou no **Edge** (no Windows, no Linux ou no Mac). Não instala nada, não precisa de internet.
+3. Arraste a pasta dos seus livros pra janela (ou clique em **📁 Escolher pasta**). Pronto.
+
+Quer que abra numa janela própria, sem barra de endereço? Deixe do lado do html o
+[`KOFlibrary.bat`](publicado/KOFlibrary.bat) (Windows) ou o [`koflibrary.sh`](publicado/koflibrary.sh) (Linux) e abra por ele.
+
+> Seus PDFs não saem do computador. O KOFlibrary guarda no navegador só o que é dele: capas, progresso, notas e temas.
+> A pasta fica lembrada (no Chrome/Edge); se o navegador pedir, é só clicar em **Liberar a pasta**.
+
+## ✨ O que tem na versão 1
+
+| | |
+|---|---|
+| 📁 **Biblioteca** | arraste a pasta ou escolha uma vez: acha todos os PDFs, inclusive nas subpastas, que viram **estantes**. PDF solto também (➕ PDF), que fica guardado no navegador |
+| 🖼️ **Capas** | a primeira página vira a capa; título, autor e ano saem do nome do arquivo (`Machado_de_Assis - Dom Casmurro (1899).pdf` → *Dom Casmurro*, *Machado de Assis*, 1899) e dá pra editar ✏️ |
+| 🔎 **Busca** | sem acento e com as palavras em qualquer ordem (`casmurro dom` acha); filtros **Lendo**, **Não lidos**, **Terminados**, **⭐ Favoritos**; ordem por recentes, título, autor, progresso |
+| 📖 **Continuar lendo** | o livro que você estava lendo no topo, com a página, o % e **quanto falta pelo seu ritmo** |
+| 🎨 **22 temas de leitura** | o tema **repinta a página do PDF**: Sépia, Café com leite, Pergaminho, Tinta eletrônica, Verde descanso, Noite, Café à noite, Meia-noite, Lousa, Preto total, Terminal, Monitor âmbar, Game Boy, Alto contraste... O texto continua nítido e as figuras coloridas não ficam em negativo nos temas escuros |
+| 🌙 **Ajustes** | brilho, contraste e **luz quente** (tira o azul pra ler de noite); vale pra todos os livros ou **só pra um** |
+| 🔖 **Marcadores e 📝 notas** | marque páginas e escreva notas; tudo numa lista lateral e **exporta pra Markdown (.md)** |
+| ⏱️ **Lembra tudo** | página onde parou, zoom, tempo lido (só conta enquanto você está lendo) |
+| ⌨️ **Atalhos** | `←` `→` páginas · `+` `−` zoom · `0` ajustar · `T` temas · `B` marcador · `N` notas · `F` tela cheia · `Esc` voltar · `Ctrl+roda` zoom |
+| ☕ **Tema do app** | Café (o do KOFstation), Café claro, Noite, Floresta, Papel, Vinho |
+
+<p align="center">
+  <img src="docs/prints/temas.jpg" alt="Leitor com o tema Café à noite e a galeria de temas" width="49%">
+  <img src="docs/prints/leitor-sepia.jpg" alt="Leitor com o tema Sépia" width="49%">
+</p>
+
+## 🧠 O que é feito em Kof
+
+Tudo que é conta mora em [`nucleo/`](nucleo), compilado pra JavaScript pelo alvo `js` do Kof:
+
+| arquivo | faz |
+|---|---|
+| [`Pintor.kf`](nucleo/Pintor.kf) | repinta os pontos da página: o tom de cinza escolhe a cor entre a tinta e o papel do tema (tabela de 256 cores); ponto colorido mantém o matiz; luz quente, brilho e contraste |
+| [`Temas.kf`](nucleo/Temas.kf) | os 22 temas (papel e tinta) |
+| [`Nome.kf`](nucleo/Nome.kf) | título, autor e ano tirados do nome do arquivo |
+| [`Busca.kf`](nucleo/Busca.kf) | normaliza (sem acento) e confere as palavras em qualquer ordem |
+| [`Leitura.kf`](nucleo/Leitura.kf) | %, tempo lido e "faltam ~2 h 10 min" pelo seu ritmo |
+| [`Cor.kf`](nucleo/Cor.kf) | contas de cor |
+
+A interface (biblioteca, leitor, painéis) está em [`web/`](web).
+
+## 🔧 Compilar
+
+Precisa do Kof 0.6.6 (Java 25) e de python3:
+
+```bash
+git clone https://github.com/KofLang/Kof4j && cd Kof4j
+mvn -q -pl kof-cli -am package -DskipTests && cp kof-cli/target/kof-cli-*.jar lib/kof.jar
+export PATH=$PWD/bin:$PATH
+cd ../KOFLibrary && web/compilar.sh          # -> dist/KOFlibrary.html
+node testes/gerar-pdfs.cjs /tmp/pdfs && node testes/navegador.cjs dist/KOFlibrary.html /tmp/pdfs /tmp/prints
+```
+
+## 🗺️ Próximas versões (ideias)
+
+- ✍️ **marca-texto**: selecionar o texto e grifar em cores, com nota no grifo
+- 🔍 busca dentro do livro e **sumário** do PDF
+- ✂️ cortar as margens brancas (o texto fica maior no celular)
+- 📊 estatísticas: tempo lido por dia, sequência de dias lendo, meta do ano
+- 📖 modo livro (duas páginas lado a lado) e modo página única com virar de página
+- 🔊 ler em voz alta (voz do próprio sistema)
+- 📱 Android e atualização sozinha, igual ao KOFstation
+- 📚 EPUB, além de PDF
+
+## Licenças
+
+KOFlibrary: código do projeto. pdf.js: Apache-2.0 ([`web/vendor/pdfjs/LICENSE`](web/vendor/pdfjs/LICENSE)), com os decodificadores
+JBIG2/OpenJPEG/QCMS em WebAssembly (licenças em [`web/vendor/pdfjs/wasm`](web/vendor/pdfjs/wasm)).

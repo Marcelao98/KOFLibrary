@@ -1,0 +1,111 @@
+package nucleo
+
+// Tira título, autor e ano do nome do arquivo.
+//   "Machado_de_Assis - Dom Casmurro (1899).pdf" -> Dom Casmurro / Machado de Assis / 1899
+//   "clean.code.2008.pdf"                       -> Clean Code / "" / 2008
+class Nome {
+    // nome sem extensão, sem [colchetes], sem o ano e com espaços normais
+    public static String limpo(String arquivo) {
+        var s = arquivo
+        var p = s.lastIndexOf(".")
+        if (p > 0 && s.length() - p <= 5) { s = s.substring(0, p) }
+        s = s.replace("_", " ")
+        // "clean.code.2008" (sem espaço nenhum): os pontos eram espaços
+        if (s.indexOf(" ") < 0) { s = s.replace(".", " ") }
+        s = tiraEntre(s, "[", "]")
+        var a = ano(arquivo)
+        if (a != "") {
+            s = s.replace("(" + a + ")", " ")
+            s = s.replace(a, " ")
+        }
+        s = s.replace("()", " ")
+        return espacos(s)
+    }
+
+    public static String titulo(String arquivo) {
+        var s = limpo(arquivo)
+        var k = s.indexOf(" - ")
+        if (k > 0) { s = s.substring(k + 3) }
+        s = tiraPontas(s)
+        if (s == "") { s = limpo(arquivo) }
+        return capitaliza(s)
+    }
+
+    public static String autor(String arquivo) {
+        var s = limpo(arquivo)
+        var k = s.indexOf(" - ")
+        if (k <= 0) { return "" }
+        return capitaliza(tiraPontas(s.substring(0, k)))
+    }
+
+    // primeiro número de 4 dígitos entre 1450 e 2099 que não está colado em outro dígito
+    public static String ano(String arquivo) {
+        var n = arquivo.length()
+        var i = 0
+        while (i + 4 <= n) {
+            if (digito(arquivo, i) && digito(arquivo, i + 1) && digito(arquivo, i + 2) && digito(arquivo, i + 3)) {
+                var antes = i > 0 && digito(arquivo, i - 1)
+                var depois = i + 4 < n && digito(arquivo, i + 4)
+                if (!antes && !depois) {
+                    var v = (arquivo.charAt(i) as Int - 48) * 1000 + (arquivo.charAt(i + 1) as Int - 48) * 100 + (arquivo.charAt(i + 2) as Int - 48) * 10 + (arquivo.charAt(i + 3) as Int - 48)
+                    if (v >= 1450 && v <= 2099) { return arquivo.substring(i, i + 4) }
+                }
+            }
+            i++
+        }
+        return ""
+    }
+
+    static Bool digito(String s, Int i) {
+        var c = s.charAt(i) as Int
+        return c >= 48 && c <= 57
+    }
+
+    static String tiraEntre(String s, String abre, String fecha) {
+        var r = s
+        var a = r.indexOf(abre)
+        while (a >= 0) {
+            var f = r.indexOf(fecha, a)
+            if (f < 0) { return r }
+            r = r.substring(0, a) + " " + r.substring(f + 1)
+            a = r.indexOf(abre)
+        }
+        return r
+    }
+
+    static String espacos(String s) {
+        var r = s.trim()
+        while (r.indexOf("  ") >= 0) { r = r.replace("  ", " ") }
+        return r
+    }
+
+    // tira traços, vírgulas e pontos soltos nas pontas
+    static String tiraPontas(String s) {
+        var r = s.trim()
+        while (r.length() > 0 && " -,.;".indexOf(r.substring(0, 1)) >= 0) { r = r.substring(1) }
+        while (r.length() > 0 && " -,.;".indexOf(r.substring(r.length() - 1)) >= 0) { r = r.substring(0, r.length() - 1) }
+        return r
+    }
+
+    // só mexe se veio tudo minúsculo ou tudo MAIÚSCULO
+    public static String capitaliza(String s) {
+        if (s != s.toLowerCase() && s != s.toUpperCase()) { return s }
+        var pequenas = " de da do das dos e a o as os em no na nos nas para por com um uma the of and to in "
+        var partes = s.toLowerCase().split(" ")
+        var r = ""
+        var i = 0
+        while (i < partes.length) {
+            var w = partes[i]
+            if (w != "") {
+                if (i > 0 && pequenas.indexOf(" " + w + " ") >= 0) {
+                    r = r + " " + w
+                } else {
+                    var cap = w.substring(0, 1).toUpperCase() + w.substring(1)
+                    if (r == "") { r = cap } else { r = r + " " + cap }
+                }
+            }
+            i++
+        }
+        return r
+    }
+}

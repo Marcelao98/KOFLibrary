@@ -1,0 +1,6 @@
+import nucleo
+
+// KOFlibrary — o núcleo (nucleo/) compilado pra JavaScript.
+// O main não faz nada; a página (web/app.js) usa as classes do núcleo.
+main() {
+}

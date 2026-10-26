@@ -1,0 +1,128 @@
+/* Temas do aplicativo: só variáveis; o app.js troca as do :root. O padrão é o café do KOFstation. */
+:root {
+  --fundo: #1a110b; --painel: #2b1d14; --cartao: #33241a; --borda: #4a3528;
+  --texto: #f3e6d8; --suave: #bfa58c; --destaque: #c08552; --destaque2: #d9b99b;
+  --leitura-fundo: #241810; --sombra: rgba(0,0,0,.45);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--fundo); color: var(--texto); font: 15px/1.45 system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--destaque); }
+button.principal { background: var(--destaque); color: #1a110b; border-color: var(--destaque); font-weight: 600; }
+button.perigo { color: #ff9b8a; }
+input, select, textarea { background: var(--fundo); border: 1px solid var(--borda); border-radius: 8px; padding: 6px 10px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--destaque); outline-offset: -1px; }
+a { color: var(--destaque2); }
+[hidden] { display: none !important; }
+
+/* ---------- biblioteca ---------- */
+#biblioteca { max-width: 1400px; margin: 0 auto; padding: 0 20px 30px; min-height: 100%; display: flex; flex-direction: column; }
+.topo { display: flex; gap: 10px; align-items: center; padding: 16px 0; position: sticky; top: 0; background: var(--fundo); z-index: 5; flex-wrap: wrap; }
+.marca { font-size: 22px; white-space: nowrap; margin-right: 8px; }
+.marca b { color: var(--destaque); }
+#busca { flex: 1; min-width: 180px; padding: 9px 14px; }
+.aviso { background: var(--painel); border: 1px solid var(--destaque); border-radius: 10px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+
+#continuar { display: flex; gap: 16px; align-items: stretch; background: var(--painel); border-radius: 14px; padding: 16px; margin-bottom: 16px; overflow-x: auto; }
+.cont-grande { display: flex; gap: 16px; cursor: pointer; min-width: 340px; flex: 1; }
+.cont-grande .capa { width: 110px; flex: none; }
+.cont-grande h2 { margin: 2px 0 4px; font-size: 20px; }
+.cont-grande .rotulo { color: var(--destaque); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.cont-grande .ler { margin-top: 10px; }
+.cont-mini { display: flex; gap: 10px; }
+.cont-mini .capa { width: 64px; cursor: pointer; }
+
+.filtros { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; }
+#chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border-radius: 999px; padding: 4px 12px; background: var(--painel); font-size: 13px; }
+.chip.ativo { background: var(--destaque); color: #1a110b; border-color: var(--destaque); }
+.chip .n { opacity: .65; margin-left: 4px; }
+
+#grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 18px; }
+.livro { position: relative; cursor: pointer; }
+.livro .titulo { font-weight: 600; margin-top: 8px; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.livro .autor { color: var(--suave); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.livro.fora { opacity: .45; }
+.capa { aspect-ratio: 1 / 1.41; border-radius: 6px; overflow: hidden; background: var(--cartao); box-shadow: 0 4px 14px var(--sombra); position: relative; }
+.capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.capa .sem { position: absolute; inset: 0; padding: 14px 12px; display: flex; flex-direction: column; justify-content: space-between; font-weight: 700; font-size: 14px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.capa .sem small { font-weight: 400; opacity: .85; }
+.livro:hover .capa { outline: 2px solid var(--destaque); }
+.progresso { height: 4px; background: var(--borda); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.progresso i { display: block; height: 100%; background: var(--destaque); }
+.pct { font-size: 11.5px; color: var(--suave); display: flex; justify-content: space-between; }
+.livro .acoes { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+.livro:hover .acoes, .livro .acoes .fav.sim { opacity: 1; }
+.livro .acoes button { padding: 2px 7px; font-size: 13px; background: rgba(20,12,8,.75); border-color: transparent; color: #fff; }
+.selo { position: absolute; left: 6px; top: 6px; background: var(--destaque); color: #1a110b; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; }
+
+.vazio { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 0; }
+.soltar { border: 2px dashed var(--borda); border-radius: 20px; padding: 40px; max-width: 560px; text-align: center; }
+.soltar .grande { font-size: 64px; }
+.soltar p { color: var(--suave); }
+#maisGrade { height: 1px; }
+.rodape { margin-top: auto; padding-top: 30px; color: var(--suave); font-size: 12px; text-align: center; }
+
+#soltarAqui { position: fixed; inset: 0; background: rgba(10,6,3,.75); z-index: 50; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+#soltarAqui div { border: 3px dashed var(--destaque); border-radius: 24px; padding: 50px 70px; font-size: 26px; background: var(--painel); }
+#toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: var(--painel); border: 1px solid var(--destaque); padding: 10px 18px; border-radius: 10px; z-index: 60; box-shadow: 0 6px 20px var(--sombra); max-width: 90vw; }
+
+dialog { background: var(--painel); color: var(--texto); border: 1px solid var(--borda); border-radius: 14px; padding: 20px 22px; min-width: 340px; max-width: 92vw; }
+dialog::backdrop { background: rgba(0,0,0,.55); }
+dialog h3 { margin-top: 0; }
+dialog label { display: block; margin: 10px 0; }
+dialog label input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; }
+dialog .botoes { display: flex; gap: 8px; margin-top: 16px; }
+dialog .botoes span { flex: 1; }
+.dica { color: var(--suave); font-size: 13px; }
+#listaApp { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px; }
+#listaApp button { text-align: left; }
+#listaApp button.ativo { outline: 2px solid var(--destaque); }
+
+/* ---------- leitor ---------- */
+#leitor { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--leitura-fundo); }
+.barra { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--painel); border-bottom: 1px solid var(--borda); flex-wrap: wrap; z-index: 3; }
+.barra .grupo { display: flex; gap: 4px; align-items: center; }
+.barra button { padding: 5px 10px; }
+.barra button.ligado { background: var(--destaque); color: #1a110b; }
+.ltitulo { flex: 1; min-width: 120px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#lPagina { width: 56px; text-align: center; padding: 4px; }
+#lTotal { color: var(--suave); font-size: 13px; min-width: 40px; }
+.linfo { position: absolute; right: 16px; bottom: 12px; background: var(--painel); color: var(--suave); font-size: 12px; padding: 4px 10px; border-radius: 8px; z-index: 2; opacity: .9; pointer-events: none; }
+#paginas { flex: 1; overflow: auto; padding: 18px 0 40px; outline: none; }
+.pagina { position: relative; margin: 0 auto 14px; background: #fff; box-shadow: 0 3px 14px var(--sombra); }
+.pagina canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pagina .num { position: absolute; left: -46px; top: 4px; color: var(--suave); font-size: 12px; opacity: .6; }
+.pagina .fita { position: absolute; right: 18px; top: -4px; font-size: 26px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
+.pagina .temnota { position: absolute; right: -36px; top: 6px; font-size: 20px; cursor: pointer; }
+
+.painel { position: absolute; right: 0; top: 52px; bottom: 0; width: 330px; max-width: 92vw; background: var(--painel); border-left: 1px solid var(--borda); padding: 14px 16px; overflow-y: auto; z-index: 4; box-shadow: -6px 0 20px var(--sombra); }
+.painel h3 { margin: 0 0 10px; }
+.painel h4 { margin: 18px 0 6px; color: var(--suave); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.grupo-temas { color: var(--suave); font-size: 12px; margin: 10px 0 4px; }
+.temas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tema { border-radius: 8px; padding: 8px 4px 6px; text-align: center; font-size: 11px; line-height: 1.2; border: 2px solid transparent; }
+.tema b { display: block; font: 600 20px Georgia, serif; }
+.tema.ativo { border-color: var(--destaque); box-shadow: 0 0 0 2px var(--destaque); }
+.ajuste { display: flex; flex-direction: column; font-size: 13px; margin-top: 12px; }
+.ajuste input { padding: 0; accent-color: var(--destaque); }
+.marca-op { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 10px; }
+.marca-op input { accent-color: var(--destaque); }
+#ajZerar { margin-top: 14px; width: 100%; }
+.nova-nota textarea { width: 100%; min-height: 70px; resize: vertical; }
+.nova-nota button { width: 100%; margin-top: 6px; }
+.item { background: var(--cartao); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: 13.5px; cursor: pointer; position: relative; white-space: pre-wrap; word-break: break-word; }
+.item .pg { color: var(--destaque); font-weight: 700; margin-right: 6px; }
+.item .data { color: var(--suave); font-size: 11px; display: block; margin-top: 2px; }
+.item .x { position: absolute; right: 4px; top: 4px; padding: 0 6px; font-size: 12px; background: transparent; border: none; opacity: .6; }
+.item .x:hover { opacity: 1; }
+.nada { color: var(--suave); font-size: 13px; }
+#btExportar { width: 100%; margin-top: 16px; }
+
+@media (max-width: 700px) {
+  #grade { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 16px 12px; }
+  .pagina .num, .pagina .temnota { display: none; }
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KOFlibrary</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='8' width='14' height='48' rx='2' fill='%23c08552'/%3E%3Crect x='26' y='14' width='12' height='42' rx='2' fill='%23d9b99b'/%3E%3Crect x='40' y='10' width='14' height='46' rx='2' transform='rotate(8 47 33)' fill='%236f4e37'/%3E%3C/svg%3E">
+<style>
+/*{{ESTILO}}*/
+</style>
+</head>
+<body>
+
+<!-- ===== Biblioteca ===== -->
+<section id="biblioteca">
+  <header class="topo">
+    <div class="marca">📚 <b>KOF</b>library</div>
+    <input id="busca" type="search" placeholder="Buscar por título, autor ou estante..." autocomplete="off">
+    <button id="btPasta" title="Escolher a pasta dos seus livros">📁 Escolher pasta</button>
+    <button id="btPdf" title="Adicionar arquivos PDF soltos">➕ PDF</button>
+    <button id="btAjustes" title="Tema do aplicativo">⚙️</button>
+  </header>
+
+  <div id="avisoPasta" class="aviso" hidden>
+    <span>📁 O navegador pede pra confirmar o acesso à sua pasta de livros.</span>
+    <button id="btReabrir">Liberar a pasta</button>
+  </div>
+
+  <div id="continuar" hidden></div>
+
+  <div class="filtros">
+    <div id="chips"></div>
+    <select id="ordem" title="Ordem">
+      <option value="recentes">Lidos recentemente</option>
+      <option value="titulo">Título</option>
+      <option value="autor">Autor</option>
+      <option value="adicionados">Adicionados</option>
+      <option value="progresso">Progresso</option>
+    </select>
+  </div>
+
+  <div id="vazio" class="vazio" hidden>
+    <div class="soltar">
+      <div class="grande">📚</div>
+      <h2>Arraste a pasta dos seus livros pra cá</h2>
+      <p>Ou clique em <b>📁 Escolher pasta</b>. O KOFlibrary acha todos os PDFs (as subpastas viram estantes)
+      e lembra da pasta na próxima vez. Seus arquivos não saem do computador.</p>
+      <button id="btPasta2">📁 Escolher pasta</button>
+    </div>
+  </div>
+
+  <div id="grade"></div>
+  <div id="maisGrade"></div>
+  <footer class="rodape">KOFlibrary <span id="versao"></span> · escrito em <a href="https://github.com/KofLang/Kof4j" target="_blank" rel="noopener">Kof</a> · PDFs desenhados pelo <a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener">pdf.js</a></footer>
+</section>
+
+<!-- ===== Leitor ===== -->
+<section id="leitor" hidden>
+  <header class="barra">
+    <button id="btVoltar" title="Voltar pra biblioteca (Esc)">← Biblioteca</button>
+    <div id="lTitulo" class="ltitulo"></div>
+    <div class="grupo">
+      <button id="btAnt" title="Página anterior (←)">◀</button>
+      <input id="lPagina" type="text" inputmode="numeric" title="Ir pra página">
+      <span id="lTotal"></span>
+      <button id="btProx" title="Próxima página (→)">▶</button>
+    </div>
+    <div class="grupo">
+      <button id="btMenos" title="Diminuir (-)">−</button>
+      <button id="btZoom" title="Ajustar à largura (0)">100%</button>
+      <button id="btMais" title="Aumentar (+)">+</button>
+    </div>
+    <div class="grupo">
+      <button id="btTemas" title="Temas de leitura (T)">🎨</button>
+      <button id="btMarcador" title="Marcar esta página (B)">🔖</button>
+      <button id="btNotas" title="Anotações e marcadores (N)">📝</button>
+      <button id="btCheia" title="Tela cheia (F)">⛶</button>
+    </div>
+  </header>
+  <div id="lInfo" class="linfo"></div>
+  <div id="paginas"></div>
+
+  <aside id="painelTemas" class="painel" hidden>
+    <h3>🎨 Tema de leitura</h3>
+    <div id="listaTemas"></div>
+    <label class="ajuste">☀️ Brilho <input id="ajBrilho" type="range" min="-60" max="60" value="0"></label>
+    <label class="ajuste">◐ Contraste <input id="ajContraste" type="range" min="60" max="180" value="100"></label>
+    <label class="ajuste">🌙 Luz quente <input id="ajQuente" type="range" min="0" max="100" value="0"></label>
+    <label class="marca-op"><input id="ajCores" type="checkbox" checked> Manter as cores das figuras</label>
+    <label class="marca-op"><input id="ajSoEste" type="checkbox"> Usar só neste livro</label>
+    <button id="ajZerar">Voltar os ajustes ao normal</button>
+  </aside>
+
+  <aside id="painelNotas" class="painel" hidden>
+    <h3>📝 Anotações</h3>
+    <div class="nova-nota">
+      <textarea id="txtNota" placeholder="Escreva uma nota sobre esta página..."></textarea>
+      <button id="btSalvarNota">Salvar nota na página <span id="notaPag"></span></button>
+    </div>
+    <h4>🔖 Marcadores</h4>
+    <div id="listaMarcadores"></div>
+    <h4>📝 Notas</h4>
+    <div id="listaNotas"></div>
+    <button id="btExportar">⬇️ Exportar anotações (.md)</button>
+  </aside>
+</section>
+
+<!-- ===== Diálogos ===== -->
+<dialog id="dlgAjustes">
+  <h3>⚙️ Tema do aplicativo</h3>
+  <div id="listaApp"></div>
+  <p class="dica">Atalhos no leitor: ← → páginas · + − zoom · 0 ajustar · T temas · B marcador · N notas · F tela cheia · Esc voltar</p>
+  <button value="ok" onclick="this.closest('dialog').close()">Fechar</button>
+</dialog>
+
+<dialog id="dlgEditar">
+  <form method="dialog">
+    <h3>✏️ Editar livro</h3>
+    <label>Título <input id="edTitulo"></label>
+    <label>Autor <input id="edAutor"></label>
+    <label class="marca-op"><input id="edTerminado" type="checkbox"> Já terminei este livro</label>
+    <div class="botoes">
+      <button value="remover" class="perigo">Tirar da biblioteca</button>
+      <span></span>
+      <button value="cancelar">Cancelar</button>
+      <button value="ok" class="principal">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="soltarAqui" hidden><div>📚 Solte aqui a pasta ou os PDFs</div></div>
+<div id="toast" hidden></div>
+<input id="arquivoPdf" type="file" accept=".pdf,application/pdf" multiple hidden>
+<input id="arquivoPasta" type="file" webkitdirectory multiple hidden>
+
+<script>
+/*{{KOF}}*/
+</script>
+<script>
+/*{{PDFJS}}*/
+</script>
+<script>
+/*{{APP}}*/
+</script>
+</body>
+</html>

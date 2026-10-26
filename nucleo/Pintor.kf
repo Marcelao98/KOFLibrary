@@ -1,0 +1,95 @@
+package nucleo
+
+// Repinta a página do PDF (os bytes RGBA do canvas) com as cores do tema.
+// O tom de cinza de cada ponto escolhe a cor entre a tinta (preto) e o papel
+// (branco), por uma tabela de 256 cores feita uma vez no preparar. Ponto bem
+// colorido (figura, foto) pode manter a cor: no tema claro só pega o tom do
+// papel; no escuro tem o claro e o escuro trocados sem mexer no matiz.
+class Pintor {
+    Int[] tr
+    Int[] tg
+    Int[] tb
+    Bool escuro
+    Bool manterCores
+    Int papel
+    Int quenteG
+    Int quenteB
+
+    public constructor() {
+        this.tr = new Int[256]
+        this.tg = new Int[256]
+        this.tb = new Int[256]
+        this.escuro = false
+        this.manterCores = true
+        this.papel = 0xFFFFFF
+        this.quenteG = 256
+        this.quenteB = 256
+    }
+
+    // brilho -100..100, contraste 50..200 (100 = normal), quente 0..100
+    public Void preparar(Int papel, Int tinta, Int brilho, Int contraste, Int quente, Bool manterCores) {
+        this.papel = papel
+        this.manterCores = manterCores
+        this.escuro = Cor.luz(papel) < Cor.luz(tinta)
+        // luz quente: tira azul (e um pouco de verde), como o modo noturno do celular
+        this.quenteB = 256 - quente * 150 / 100
+        this.quenteG = 256 - quente * 50 / 100
+        var v = 0
+        while (v < 256) {
+            var t = Cor.limita((v - 128) * contraste / 100 + 128 + brilho * 128 / 100)
+            var c = Cor.mistura(tinta, papel, t)
+            this.tr[v] = Cor.r(c)
+            this.tg[v] = Cor.g(c) * this.quenteG / 256
+            this.tb[v] = Cor.b(c) * this.quenteB / 256
+            v++
+        }
+    }
+
+    // px = bytes RGBA (Uint8ClampedArray do canvas), n = quantos bytes
+    public Void pintar(Int[] px, Int n) {
+        var tr = this.tr
+        var tg = this.tg
+        var tb = this.tb
+        var pr = Cor.r(this.papel)
+        var pg = Cor.g(this.papel)
+        var pb = Cor.b(this.papel)
+        var qg = this.quenteG
+        var qb = this.quenteB
+        var cores = this.manterCores
+        var escuro = this.escuro
+        var i = 0
+        while (i < n) {
+            var r = px[i]
+            var g = px[i + 1]
+            var b = px[i + 2]
+            var mx = r
+            if (g > mx) { mx = g }
+            if (b > mx) { mx = b }
+            var mn = r
+            if (g < mn) { mn = g }
+            if (b < mn) { mn = b }
+            if (cores && mx - mn > 48) {
+                if (escuro) {
+                    // inverte o claro/escuro mantendo o matiz
+                    var d = 255 - mx - mn
+                    r = r + d
+                    g = g + d
+                    b = b + d
+                } else {
+                    r = r * pr / 255
+                    g = g * pg / 255
+                    b = b * pb / 255
+                }
+                px[i] = r
+                px[i + 1] = g * qg / 256
+                px[i + 2] = b * qb / 256
+            } else {
+                var l = (r * 77 + g * 151 + b * 28) / 256
+                px[i] = tr[l]
+                px[i + 1] = tg[l]
+                px[i + 2] = tb[l]
+            }
+            i = i + 4
+        }
+    }
+}

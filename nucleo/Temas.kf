@@ -1,0 +1,77 @@
+package nucleo
+
+// Temas de leitura: cada um diz a cor do papel e a cor da tinta. O Pintor
+// repinta a página do PDF trocando o branco pelo papel e o preto pela tinta
+// (e os cinzas no meio do caminho), então o texto continua nítido.
+class Temas {
+    String[] ids
+    String[] nomes
+    String[] grupos
+    Int[] papeis
+    Int[] tintas
+    Int total
+
+    public constructor() {
+        this.ids = new String[40]
+        this.nomes = new String[40]
+        this.grupos = new String[40]
+        this.papeis = new Int[40]
+        this.tintas = new Int[40]
+        this.total = 0
+        // papel e tinta em 0xRRGGBB; "original" não repinta nada
+        add("original", "Original", "Claros", 0xFFFFFF, 0x000000)
+        add("papel", "Papel macio", "Claros", 0xF7F3EA, 0x222222)
+        add("sepia", "Sépia", "Claros", 0xF4ECD8, 0x5B4636)
+        add("cafe-com-leite", "Café com leite", "Claros", 0xE9D8BF, 0x3B2A1E)
+        add("pergaminho", "Pergaminho", "Claros", 0xF1E0B5, 0x4A3520)
+        add("eink", "Tinta eletrônica", "Claros", 0xE6E4DF, 0x2A2A2A)
+        add("verde", "Verde descanso", "Claros", 0xD8ECD3, 0x1F3A1F)
+        add("rosa", "Rosa chá", "Claros", 0xFBE9EC, 0x4A2A33)
+        add("lavanda", "Lavanda", "Claros", 0xECE6F5, 0x2E2440)
+        add("solar", "Solarizado", "Claros", 0xFDF6E3, 0x586E75)
+        add("cinza", "Cinza chumbo", "Escuros", 0x3A3A3A, 0xDCDCDC)
+        add("noite", "Noite", "Escuros", 0x141414, 0xD6D6D6)
+        add("cafe-noite", "Café à noite", "Escuros", 0x1E1611, 0xE3CFB4)
+        add("meia-noite", "Meia-noite", "Escuros", 0x0F1724, 0xC8D6E8)
+        add("solar-escuro", "Solarizado escuro", "Escuros", 0x002B36, 0x93A1A1)
+        add("lousa", "Lousa", "Escuros", 0x22332B, 0xE8EFE9)
+        add("oled", "Preto total", "Escuros", 0x000000, 0xBDBDBD)
+        add("terminal", "Terminal", "Retrô", 0x050A05, 0x33FF66)
+        add("ambar", "Monitor âmbar", "Retrô", 0x0D0700, 0xFFB000)
+        add("gameboy", "Game Boy", "Retrô", 0x9BBC0F, 0x0F380F)
+        add("alto-contraste", "Alto contraste", "Acessível", 0x000000, 0xFFFF00)
+        add("branco-total", "Branco total", "Acessível", 0xFFFFFF, 0x000000)
+    }
+
+    Void add(String id, String nome, String grupo, Int papel, Int tinta) {
+        this.ids[this.total] = id
+        this.nomes[this.total] = nome
+        this.grupos[this.total] = grupo
+        this.papeis[this.total] = papel
+        this.tintas[this.total] = tinta
+        this.total = this.total + 1
+    }
+
+    public Int quantos() { return this.total }
+    public String id(Int i) { return this.ids[i] }
+    public String nome(Int i) { return this.nomes[i] }
+    public String grupo(Int i) { return this.grupos[i] }
+    public Int papel(Int i) { return this.papeis[i] }
+    public Int tinta(Int i) { return this.tintas[i] }
+
+    // escuro = papel mais escuro que a tinta (aí as figuras coloridas são
+    // invertidas sem perder a cor, senão o tema "Noite" ficaria com fotos
+    // em negativo)
+    public Bool escuro(Int i) {
+        return Cor.luz(this.papeis[i]) < Cor.luz(this.tintas[i])
+    }
+
+    public Int indice(String id) {
+        var i = 0
+        while (i < this.total) {
+            if (this.ids[i] == id) { return i }
+            i++
+        }
+        return 0
+    }
+}

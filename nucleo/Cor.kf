@@ -1,0 +1,40 @@
+package nucleo
+
+// Contas de cor em 0xRRGGBB.
+class Cor {
+    public static Int r(Int c) { return (c >> 16) & 0xFF }
+    public static Int g(Int c) { return (c >> 8) & 0xFF }
+    public static Int b(Int c) { return c & 0xFF }
+
+    // luminância 0..255 (pesos do olho: verde pesa mais, azul menos)
+    public static Int luz(Int c) {
+        return (r(c) * 77 + g(c) * 151 + b(c) * 28) >> 8
+    }
+
+    // mistura x e y: t = 0 dá x, t = 255 dá y
+    public static Int mistura(Int x, Int y, Int t) {
+        var rr = r(x) + (r(y) - r(x)) * t / 255
+        var gg = g(x) + (g(y) - g(x)) * t / 255
+        var bb = b(x) + (b(y) - b(x)) * t / 255
+        return (rr << 16) | (gg << 8) | bb
+    }
+
+    // "#rrggbb" pro CSS da página
+    public static String hex(Int c) {
+        var dig = "0123456789abcdef"
+        var s = "#"
+        var k = 20
+        while (k >= 0) {
+            var v = (c >> k) & 0xF
+            s = s + dig.substring(v, v + 1)
+            k = k - 4
+        }
+        return s
+    }
+
+    public static Int limita(Int v) {
+        if (v < 0) { return 0 }
+        if (v > 255) { return 255 }
+        return v
+    }
+}

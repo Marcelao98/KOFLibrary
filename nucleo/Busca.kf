@@ -1,0 +1,40 @@
+package nucleo
+
+// Busca da biblioteca: sem acento, sem maiúscula, palavras em qualquer ordem.
+class Busca {
+    public static String normaliza(String s) {
+        var de = "áàâãäéèêëíìîïóòôõöúùûüçñ"
+        var para = "aaaaaeeeeiiiiooooouuuucn"
+        var t = s.toLowerCase()
+        var r = ""
+        var i = 0
+        var n = t.length()
+        while (i < n) {
+            var c = t.substring(i, i + 1)
+            var k = de.indexOf(c)
+            if (k >= 0) {
+                r = r + para.substring(k, k + 1)
+            } else {
+                var v = t.charAt(i) as Int
+                if ((v >= 97 && v <= 122) || (v >= 48 && v <= 57)) {
+                    r = r + c
+                } else {
+                    r = r + " "
+                }
+            }
+            i++
+        }
+        return r
+    }
+
+    // texto e consulta já normalizados: toda palavra da consulta tem que aparecer
+    public static Bool combina(String texto, String consulta) {
+        var partes = consulta.split(" ")
+        var i = 0
+        while (i < partes.length) {
+            if (partes[i] != "" && texto.indexOf(partes[i]) < 0) { return false }
+            i++
+        }
+        return true
+    }
+}
