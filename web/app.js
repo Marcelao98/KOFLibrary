@@ -68,7 +68,16 @@ const Banco = {
           if (!db.objectStoreNames.contains(loja)) db.createObjectStore(loja, chave);
         }
       };
-      r.onsuccess = () => { this.db = r.result; ok(); };
+      // outra janela/aba com o KOFlibrary antigo aberta segura o banco na versão velha: sem isso, o app ficava
+      // parado esperando pra sempre. Avisa; quando a outra fechar, o navegador continua sozinho daqui.
+      r.onblocked = () => toast('⏳ Tem outra janela do KOFlibrary aberta com a versão antiga. Feche ela que este abre sozinho.', 600000);
+      r.onsuccess = () => {
+        this.db = r.result;
+        // e daqui pra frente: se uma versão nova abrir em outra janela, esta solta o banco e recarrega
+        this.db.onversionchange = () => { this.db.close(); toast('🔄 KOFlibrary atualizado: recarregando...'); setTimeout(() => location.reload(), 600); };
+        $('#toast').hidden = true;
+        ok();
+      };
       r.onerror = () => erro(r.error);
     });
   },
