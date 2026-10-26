@@ -1,0 +1,1 @@
+node-unrar-js 2.0.2 (https://github.com/YuJianrong/node-unrar.js), MIT; unrar.wasm = UnRAR da RARLAB (licença do UnRAR: só descompactar)

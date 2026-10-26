@@ -21,7 +21,9 @@ const todos = [];
   const linhas = readline.createInterface({ input: java.stdout });
 
   // o "app Android": serve a página e os PDFs recebidos (/pasta?u=, com Range, como o Biblioteca.java)
+  let pedacos = 0;
   const srv = http.createServer((req, res) => {
+    if (req.headers.range && /\.cb[zr]/.test(req.url)) pedacos++;
     const u = new URL(req.url, 'http://x');
     if (u.pathname === '/pasta') {
       const f = u.searchParams.get('u');
@@ -51,7 +53,7 @@ const todos = [];
       for (const f of fs.readdirSync(d)) {
         const p = path.join(d, f);
         if (fs.statSync(p).isDirectory()) achar(p, c + f + '/');
-        else if (f.endsWith('.pdf')) l.push({ n: f, u: p, t: fs.statSync(p).size, c: c + f, r: true });
+        else if (/\.(pdf|cbz|cbr)$/i.test(f)) l.push({ n: f, u: p, t: fs.statSync(p).size, c: c + f, r: true });
       }
     })(recebidos, '');
     return l;
@@ -101,15 +103,15 @@ const todos = [];
   await pc.waitForFunction(() => /Sincronizado|Não achei|Senha/.test(document.querySelector('#sincStatus').textContent), null, { timeout: 30000 });
   const st = await pc.textContent('#sincStatus');
   console.log('status no PC:', st);
-  ok(st.includes('4 livros enviados'), 'PC mandou os 4 PDFs');
+  ok(st.includes(`${todos.length} livros enviados`), `PC mandou os ${todos.length} arquivos (PDF e mangá)`);
   await pc.screenshot({ path: path.join(trab, 'pc-sincronia.png') });
   await pc.click('#dlgCelular .botoes button');
-  const chegaram = execFileSync('find', [recebidos, '-name', '*.pdf']).toString().trim().split('\n');
+  const chegaram = execFileSync('find', [recebidos, '-type', 'f']).toString().trim().split('\n');
   console.log('no celular:', chegaram.map((f) => path.relative(recebidos, f)));
-  ok(chegaram.length === 4 && chegaram.some((f) => f.includes('/Estudos/')), 'livros gravados no celular, com a estante');
+  ok(chegaram.length === todos.length && chegaram.some((f) => f.includes('/Estudos/')), 'livros gravados no celular, com a estante');
 
   // ---- celular: tem os livros, o Dom Casmurro na página 5 com a nota
-  await cel.waitForFunction(() => document.querySelectorAll('#grade .livro img').length >= 4, null, { timeout: 30000 })
+  await cel.waitForFunction((n) => KOFlibrary.livros.size === n && [...KOFlibrary.livros.values()].every((l) => l.temCapa && KOFlibrary.fontes.has(l.id)), todos.length, { timeout: 60000 })
     .catch(async (e) => { console.log(await cel.evaluate(() => JSON.stringify([...KOFlibrary.livros.values()].map((l) => [l.titulo, l.temCapa, l.erro, KOFlibrary.fontes.has(l.id)])))); throw e; });
   const r1 = await cel.evaluate(() => { const l = [...KOFlibrary.livros.values()].find((x) => x.titulo === 'Dom Casmurro'); return { pagina: l.pagina, notas: l.notas.map((n) => n.texto), marcadores: l.marcadores, temArquivo: KOFlibrary.fontes.has(l.id) }; });
   console.log('Dom Casmurro no celular:', r1);
@@ -152,6 +154,17 @@ const todos = [];
   await pc.evaluate(() => KOFlibrary.sincronizarCelular(true));
   const r3 = await cel.evaluate(() => [...KOFlibrary.livros.values()].find((x) => x.titulo === 'Dom Casmurro').notas.map((n) => n.texto));
   ok(r3.length === 1 && r3[0] === 'nota do celular', 'nota apagada no PC some do celular');
+  // mangá no celular: abre lendo só os pedaços do .cbz (Range), direita->esquerda com o toque na beirada esquerda
+  ok(!(await cel.evaluate(() => [...KOFlibrary.livros.values()].filter((l) => l.erro).map((l) => l.erro))).length, 'capas dos mangás no celular');
+  console.log('  grade do celular:', await cel.$$eval('#grade .livro .titulo', (e) => e.map((x) => x.textContent)), await cel.isVisible('#biblioteca'));
+  await cel.click('#grade .livro:has-text("Berserk")', { timeout: 5000 });
+  await cel.waitForSelector('#paginas.paginado .folha canvas');
+  await cel.touchscreen.tap(40, 450);
+  await cel.waitForTimeout(400);
+  ok(await cel.inputValue('#lPagina') === '2', 'toque na beirada esquerda avança o mangá');
+  ok(pedacos > 0, `o .cbz foi lido aos pedaços (${pedacos} pedidos com Range)`);
+  await cel.screenshot({ path: path.join(trab, 'cel-manga.png') });
+  await cel.evaluate(() => window.__voltar());
   // tela do celular com o código
   await cel.click('#btCelular');
   await cel.screenshot({ path: path.join(trab, 'cel-codigo.png') });

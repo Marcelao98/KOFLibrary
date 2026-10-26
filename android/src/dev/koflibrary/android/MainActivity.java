@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final int PEDIDO_PASTA = 1, PEDIDO_PDF = 2, PEDIDO_SALVAR = 3;
     // sobe a cada mudança neste Java: página publicada com casca maior pede APK novo (ela pode usar algo que esta não tem)
-    static final int CASCA = 1;
+    static final int CASCA = 2;
     private static final String FONTE = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/publicado/";
     private static final String APK = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/android/apk/KOFlibrary.apk";
 
@@ -242,7 +242,9 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() { public void run() {
                 Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 i.addCategory(Intent.CATEGORY_OPENABLE);
-                i.setType("application/pdf");
+                i.setType("*/*");   // .cbz/.cbr não têm tipo certo em todo celular: deixa escolher qualquer um e filtra pelo nome
+                i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/zip", "application/x-cbz", "application/x-cbr",
+                        "application/vnd.comicbook+zip", "application/vnd.comicbook-rar", "application/x-rar-compressed", "application/octet-stream"});
                 i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 try { startActivityForResult(i, PEDIDO_PDF); }
                 catch (ActivityNotFoundException e) { Toast.makeText(MainActivity.this, "não achei o seletor de arquivos", Toast.LENGTH_LONG).show(); }

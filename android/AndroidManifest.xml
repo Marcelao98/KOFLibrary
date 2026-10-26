@@ -23,18 +23,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- "Abrir com KOFlibrary": PDF tocado no gerenciador de arquivos, WhatsApp, Drive... -->
+            <!-- "Abrir com KOFlibrary": PDF ou mangá (.cbz/.cbr) tocado no gerenciador de arquivos, WhatsApp, Drive... -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/x-cbr" />
             </intent-filter>
             <!-- "Compartilhar" um PDF com o KOFlibrary -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/x-cbr" />
             </intent-filter>
         </activity>
     </application>

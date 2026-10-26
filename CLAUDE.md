@@ -34,6 +34,22 @@ Saída: **um html só** (`dist/KOFlibrary.html`, ~2,4 MB) que abre por file:// n
   Desligar isso por flag no lançador foi barrado pela checagem de segurança: NÃO fazer.
 - Falta testar no aparelho dele: pasta SAF, Abrir com, volume, sincronia na Wi-Fi de verdade.
 
+## Mangá (branch `manga`, a partir do `apk`, 26/10)
+- Formatos: PDF + .cbz (zip) + .cbr (RAR). `EXT_LIVRO` no app.js, `Sincronia.ehLivro` no Java. Próximas fases combinadas:
+  2 = EPUB/MOBI/AZW3/FB2 com foliate-js (MIT), 3 = TXT/MD/HTML (+ talvez DjVu). Ele lê mais mangá JAPONÊS: padrão rtl.
+- Kof: `Zip.kf` (fimCentral/inicioCentral/Indice/inicioDados + CRC-32), `Capitulo.kf` (serie/volume/capitulo x1000, chave
+  de ordem natural), `Bordas.kf`. Kof NÃO tem lista literal: `"a|b".split("|")`; campo e método com o mesmo nome quebram
+  no JS (renomear o campo).
+- O documento de imagens (`abrirQuadrinho`) imita o do pdf.js (numPages, getPage -> getViewport/render, loadingTask),
+  então webtoon = o leitor de rolagem do PDF. Paginado (`mostrar`, `passo`, `L.mostradas`): dupla em tela larga, capa e
+  página larga sozinhas, `sentido()` inverte setas/toques no rtl. Fim -> `#fimCap` com `proximoCapitulo`.
+  `config.manga` = {direcao rtl|ltr|vertical, dupla, cortar} (global). .cbz lido por pedaços (`pedaco`: Range no celular,
+  File.slice no PC); .cbr inteiro na memória, um por vez (`naFilaRar`).
+- Biblioteca: `l.serie/cap/vol` (`marcarQuadrinho`; sincronizam), séries com 2+ capítulos viram cartão (`agruparSeries`,
+  `serieAberta`), chip 🗾 Mangás. CASCA do APK = 2.
+- Testes: `python3 testes/gerar-mangas.py <pasta>` (precisa do `rar` pro .cbr: apt install rar) + `testes/manga.cjs`;
+  `testes/nucleo.cjs` (Kof no Node). Playwright não lê arquivo com acento no caminho pelo setInputFiles: pasta "Mangas".
+
 ## Como falar com o Marcelo
 Português do Brasil, informal, direto; ele escreve rápido por voz (muitos erros de digitação). Liga pra economia de
 tokens: fazer só o que pediu. Commits em português, sem nome de modelo de IA. Não abrir PR sem ele pedir.

@@ -38,7 +38,7 @@ nucleo = re.sub(r"^//# sourceMappingURL=.*$", "", nucleo, flags=re.M)
 nucleo = re.sub(r"^main\(\);\s*$", "", nucleo, flags=re.M)
 # deslocamento por constante: o alvo JS passa por BigInt (lento); com número literal é o mesmo valor
 nucleo = re.sub(r"Number\(BigInt\.asIntN\(32, BigInt\((\d+)\)\)\)", r"\1", nucleo)
-classes = ["Temas", "Pintor", "Cor", "Nome", "Busca", "Leitura"]
+classes = ["Temas", "Pintor", "Cor", "Nome", "Busca", "Leitura", "Zip", "Indice", "Capitulo", "Bordas"]
 for c in classes:
     if f"class nucleo_{c}" not in nucleo:
         sys.exit(f"juntar.py: nucleo_{c} não apareceu na saída do Kof")
@@ -62,10 +62,30 @@ def trabalhador_classico():
     return w.rstrip()[: -len(fim)].replace("import.meta.url", "self.location.href")
 
 
+def unrar_embutido():
+    """O node-unrar-js (web/vendor/unrar, módulos ES) vira um script comum: KofUnrar.createExtractorFromData. O .wasm
+    vai em base64 (UNRAR_WASM) e a página entrega ele como wasmBinary (nada é buscado do lado do html)."""
+    v = web / "vendor" / "unrar"
+    partes = []
+    for nome in ["unrar.js", "ExtractorData.helper.js", "Extractor.js", "ExtractorData.js", "unrar.singleton.js", "index.esm.js"]:
+        t = (v / nome).read_text()
+        t = re.sub(r"^import .*$", "", t, flags=re.M)
+        t = re.sub(r"^export \* from .*$", "", t, flags=re.M)
+        t = t.replace("export default Module;", "const unrarFactory = Module;")
+        t = re.sub(r"^export (class|async function|function|const) ", r"\1 ", t, flags=re.M)
+        t = re.sub(r"^//# sourceMappingURL=.*$", "", t, flags=re.M)
+        if re.search(r"^\s*(import|export) ", t, flags=re.M):
+            sys.exit(f"juntar.py: sobrou import/export em vendor/unrar/{nome}")
+        partes.append(t)
+    return ("const KofUnrar = (() => {\n" + "\n".join(partes) + "\nreturn { createExtractorFromData };\n})();\n"
+            + "const UNRAR_WASM = '" + base64.b64encode((v / "unrar.wasm").read_bytes()).decode() + "';\n")
+
+
 motor = (
     "const PDFJS_FONTE = " + json.dumps((pdfjs / "pdf.min.mjs").read_text()) + ";\n"
     + "const PDFJS_TRABALHADOR = " + json.dumps(trabalhador_classico()) + ";\n"
     + "const PDFJS_WASM = " + json.dumps(wasm) + ";\n"
+    + unrar_embutido()
 )
 
 

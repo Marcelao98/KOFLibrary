@@ -20,6 +20,20 @@ Quer que abra numa janela própria, sem barra de endereço? Deixe do lado do htm
 > Seus PDFs não saem do computador. O KOFlibrary guarda no navegador só o que é dele: capas, progresso, notas e temas.
 > A pasta fica lembrada (no Chrome/Edge); se o navegador pedir, é só clicar em **Liberar a pasta**.
 
+## 🗾 Mangá e HQ
+
+Além de PDF, o KOFlibrary lê **mangá e HQ em `.cbz` e `.cbr`**. É só deixar na mesma pasta dos livros (uma subpasta por
+série fica organizado).
+
+- **Direita → esquerda** (mangá japonês, o padrão): a seta ←, o toque na beirada esquerda e arrastar pra direita avançam.
+  Também tem **esquerda → direita** (HQ) e **⬇️ Webtoon** (rolagem vertical, pra manhwa), no painel 🎨.
+- **Duas páginas lado a lado** com a tela deitada; capa e página dupla desenhada ficam sozinhas.
+- **Séries:** os capítulos de uma série viram um cartão só ("3 de 110 lidos"); dentro dele os capítulos ficam em ordem
+  (o núcleo em Kof entende "One Piece v03 c025", "Cap. 101.5", "Vol.12"...). No fim do capítulo: **Próximo capítulo →**.
+- **Temas** repintam a página do mangá também (Noite e Sépia ficam ótimos no preto e branco) e dá pra **cortar as bordas
+  brancas**.
+- O `.cbz` é lido aos pedaços: só a imagem que vai aparecer sai do arquivo (o zip é lido pelo [`Zip.kf`](nucleo/Zip.kf)).
+
 ## 📱 No celular (Android)
 
 1. Baixe o [**KOFlibrary.apk**](https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/android/apk/KOFlibrary.apk) no celular
@@ -69,6 +83,9 @@ Tudo que é conta mora em [`nucleo/`](nucleo), compilado pra JavaScript pelo alv
 | [`Busca.kf`](nucleo/Busca.kf) | normaliza (sem acento) e confere as palavras em qualquer ordem |
 | [`Leitura.kf`](nucleo/Leitura.kf) | %, tempo lido e "faltam ~2 h 10 min" pelo seu ritmo |
 | [`Cor.kf`](nucleo/Cor.kf) | contas de cor |
+| [`Zip.kf`](nucleo/Zip.kf) | lê o índice do `.cbz` (zip) e diz onde está cada página; CRC-32 |
+| [`Capitulo.kf`](nucleo/Capitulo.kf) | série, volume e capítulo do nome do arquivo e a ordem natural (2 antes de 10) |
+| [`Bordas.kf`](nucleo/Bordas.kf) | acha as bordas brancas da página de mangá pra cortar |
 
 A interface (biblioteca, leitor, painéis) está em [`web/`](web); o app Android (uma casca em Java com o mesmo html) em [`android/`](android).
 
@@ -92,9 +109,11 @@ node testes/gerar-pdfs.cjs /tmp/pdfs && node testes/navegador.cjs dist/KOFlibrar
 - 📊 estatísticas: tempo lido por dia, sequência de dias lendo, meta do ano
 - 📖 modo livro (duas páginas lado a lado) e modo página única com virar de página
 - 🔊 ler em voz alta (voz do próprio sistema)
-- 📚 EPUB, além de PDF
+- 📚 EPUB, MOBI, AZW3, FB2 (fase 2) e TXT/MD (fase 3)
 
 ## Licenças
 
 KOFlibrary: código do projeto. pdf.js: Apache-2.0 ([`web/vendor/pdfjs/LICENSE`](web/vendor/pdfjs/LICENSE)), com os decodificadores
 JBIG2/OpenJPEG/QCMS em WebAssembly (licenças em [`web/vendor/pdfjs/wasm`](web/vendor/pdfjs/wasm)).
+`.cbr`: [node-unrar-js](https://github.com/YuJianrong/node-unrar.js) (MIT) com o UnRAR da RARLAB em WebAssembly (licença do
+UnRAR: só descompactar), em [`web/vendor/unrar`](web/vendor/unrar).

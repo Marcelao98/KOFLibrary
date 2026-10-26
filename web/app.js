@@ -102,6 +102,7 @@ function toast(msg, ms = 2800) {
   clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms);
 }
 const idDe = (f) => f.name + '|' + f.size;
+const EXT_LIVRO = /\.(pdf|cbz|cbr)$/i;   // PDF, mangá/HQ em zip (.cbz) e em RAR (.cbr)
 function salvarLivro(l) { return Banco.put('livros', l); }
 const salvarDepois = (() => { const fila = new Set(); let t = 0; return (l) => { fila.add(l); clearTimeout(t); t = setTimeout(() => { for (const x of fila) salvarLivro(x); fila.clear(); }, 600); }; })();
 
@@ -115,9 +116,13 @@ function registrar(file, caminho, estanteNome) {
       paginas: 0, pagina: 1, adicionado: Date.now(), lido: 0, segundos: 0, paginasLidas: 0,
       favorito: false, terminado: false, notas: [], marcadores: [], noBanco: false,
     };
+    marcarQuadrinho(l, caminho);
     livros.set(id, l);
     salvarLivro(l);
-  } else if (estanteNome !== undefined && l.estante !== estanteNome && !l.noBanco) {
+  } else if (ehQuadrinho(l) && l.serie === undefined) {
+    marcarQuadrinho(l, caminho); salvarLivro(l);
+  }
+  if (estanteNome !== undefined && l.estante !== estanteNome && !l.noBanco) {
     l.estante = estanteNome; l.caminho = caminho; salvarLivro(l);
   }
   normal.delete(id);
@@ -132,7 +137,7 @@ async function lerPasta(dir, prefixo = '', estanteNome = '', achados = []) {
     if (h.kind === 'directory') {
       if (nome.startsWith('.')) continue;
       await lerPasta(h, prefixo + nome + '/', estanteNome || nome, achados);
-    } else if (/\.pdf$/i.test(nome)) {
+    } else if (EXT_LIVRO.test(nome)) {
       try {
         const f = await h.getFile();
         const l = registrar(f, prefixo + nome, estanteNome);
@@ -150,7 +155,7 @@ async function adicionarPasta(dir) {
   if (!ja) await guardarConfig('pastas', [...pastas, dir]);
   toast('📁 Lendo a pasta "' + dir.name + '"...');
   const n = (await lerPasta(dir)).length;
-  toast(`📚 ${n} PDF${n === 1 ? '' : 's'} em "${dir.name}"`);
+  toast(`📚 ${n} arquivo${n === 1 ? '' : 's'} em "${dir.name}"`);
   desenharBiblioteca();
   fazerCapas();
 }
@@ -178,7 +183,7 @@ async function escolherPasta() {
 async function adicionarArquivos(files) {
   let n = 0;
   for (const f of files) {
-    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') continue;
+    if (!EXT_LIVRO.test(f.name) && f.type !== 'application/pdf') continue;
     const l = registrar(f, f.name, livros.get(idDe(f))?.estante);
     if (!fontes.has(l.id)) {
       try { await Banco.put('arquivos', f, l.id); l.noBanco = true; salvarLivro(l); } catch (e) { /* sem espaço: fica só na sessão */ }
@@ -186,8 +191,8 @@ async function adicionarArquivos(files) {
     }
     n++;
   }
-  if (n) toast(`📚 ${n} PDF${n === 1 ? '' : 's'} adicionado${n === 1 ? '' : 's'}`);
-  else toast('Nenhum PDF ali.');
+  if (n) toast(`📚 ${n} arquivo${n === 1 ? '' : 's'} adicionado${n === 1 ? '' : 's'}`);
+  else toast('Nenhum PDF ou mangá ali.');
   desenharBiblioteca();
   fazerCapas();
   return n;
@@ -196,14 +201,14 @@ async function adicionarArquivos(files) {
 function adicionarSoNaSessao(lista) {
   let n = 0;
   for (const { file, caminho } of lista) {
-    if (!/\.pdf$/i.test(file.name)) continue;
+    if (!EXT_LIVRO.test(file.name)) continue;
     // caminho = "<pasta escolhida>/<subpasta>/.../livro.pdf": a 1ª subpasta é a estante
     const partes = caminho.split('/');
     const l = registrar(file, caminho, partes.length > 2 ? partes[1] : '');
     fontes.set(l.id, async () => file);
     n++;
   }
-  toast(`📚 ${n} PDFs nesta sessão (este navegador não guarda a pasta; no Chrome/Edge ele lembra)`, 5000);
+  toast(`📚 ${n} arquivos nesta sessão (este navegador não guarda a pasta; no Chrome/Edge ele lembra)`, 5000);
   desenharBiblioteca();
   fazerCapas();
 }
@@ -248,7 +253,7 @@ async function fazerCapas() {
     const faltam = [...livros.values()].filter((l) => fontes.has(l.id) && (!l.temCapa || !l.paginas));
     for (const l of faltam) {
       try {
-        const doc = await abrirPdf(fontes.get(l.id));
+        const doc = await abrirDocumento(l);
         l.paginas = doc.numPages;
         try {
           const info = (await doc.getMetadata()).info || {};
@@ -270,6 +275,7 @@ async function fazerCapas() {
       }
       salvarLivro(l);
       atualizarCartao(l);
+      if (ehQuadrinho(l) && !serieAberta && $('#leitor').hidden) { clearTimeout(fazerCapas.t); fazerCapas.t = setTimeout(desenharBiblioteca, 150); }
     }
   } finally { fazendoCapas = false; }
 }
@@ -301,11 +307,13 @@ function visiveis() {
   let lista = [...livros.values()];
   if (estante) lista = lista.filter((l) => l.estante === estante);
   if (filtro === 'favoritos') lista = lista.filter((l) => l.favorito);
+  else if (filtro === 'quadrinhos') lista = lista.filter(ehQuadrinho);
   else if (filtro !== 'todos') lista = lista.filter((l) => situacao(l) === filtro);
+  if (serieAberta) return lista.filter((l) => ehQuadrinho(l) && l.serie === serieAberta).sort(ordemCapitulos);
   if (q) {
     lista = lista.filter((l) => {
       let n = normal.get(l.id);
-      if (n === undefined) { n = K.Busca.normaliza(l.titulo + ' ' + l.autor + ' ' + l.estante + ' ' + l.arquivo + ' ' + l.ano); normal.set(l.id, n); }
+      if (n === undefined) { n = K.Busca.normaliza(l.titulo + ' ' + l.autor + ' ' + l.estante + ' ' + l.arquivo + ' ' + l.ano + ' ' + (l.serie || '')); normal.set(l.id, n); }
       return K.Busca.combina(n, q);
     });
   }
@@ -318,9 +326,10 @@ function visiveis() {
     adicionados: (a, b) => b.adicionado - a.adicionado,
     progresso: (a, b) => pct(b) - pct(a),
   }[ordem];
-  return lista.sort(f);
+  return agruparSeries(lista, !!q).sort(f);
 }
 function cartao(l) {
+  if (l.grupo) return cartaoSerie(l);
   const p = pct(l);
   const fav = el('button', { class: 'fav' + (l.favorito ? ' sim' : ''), title: 'Favorito', onclick: (e) => { e.stopPropagation(); l.favorito = !l.favorito; l.editadoEm = Date.now(); salvarLivro(l); atualizarCartao(l); } }, l.favorito ? '⭐' : '☆');
   const ed = el('button', { title: 'Editar', onclick: (e) => { e.stopPropagation(); editar(l); } }, '✏️');
@@ -328,7 +337,8 @@ function cartao(l) {
     capaEl(l),
     el('div', { class: 'acoes' }, ed, fav),
     l.terminado ? el('span', { class: 'selo' }, '✓ lido') : null,
-    el('div', { class: 'titulo' }, l.titulo),
+    ehQuadrinho(l) ? el('span', { class: 'formato' }, tipoDe(l.arquivo).toUpperCase()) : null,
+    el('div', { class: 'titulo' }, serieAberta ? rotuloCap(l) : nomeExibido(l)),
     el('div', { class: 'autor' }, [l.autor, l.ano].filter(Boolean).join(' · ') || ' '),
     el('div', { class: 'progresso' }, el('i', { style: `width:${p}%` })),
     el('div', { class: 'pct' }, el('span', {}, l.paginas ? (l.lido ? `pág. ${l.pagina} de ${l.paginas}` : `${l.paginas} páginas`) : ''), el('span', {}, l.lido ? p + '%' : '')));
@@ -347,11 +357,17 @@ function desenharChips() {
     ['naolidos', 'Não lidos', conta((l) => situacao(l) === 'naolidos')],
     ['terminados', '✓ Terminados', conta((l) => situacao(l) === 'terminados')],
     ['favoritos', '⭐ Favoritos', conta((l) => l.favorito)],
+    ['quadrinhos', '🗾 Mangás', conta(ehQuadrinho)],
   ];
   const box = $('#chips'); box.replaceChildren();
+  if (serieAberta) {
+    box.append(el('button', { class: 'chip', onclick: () => { serieAberta = ''; desenharBiblioteca(); } }, '← Voltar'),
+      el('button', { class: 'chip ativo', onclick: () => { serieAberta = ''; desenharBiblioteca(); } }, '🗾 ' + serieAberta + ' ✕'));
+    return;
+  }
   for (const [k, nome, n] of chips) {
     if (k !== 'todos' && !n) continue;
-    box.append(el('button', { class: 'chip' + (filtro === k && !(k === 'todos' && estante) ? ' ativo' : ''), onclick: () => { filtro = k; if (k === 'todos') estante = ''; desenharBiblioteca(); } }, nome, el('span', { class: 'n' }, String(n))));
+    box.append(el('button', { class: 'chip' + (filtro === k && !(k === 'todos' && estante) ? ' ativo' : ''), onclick: () => { filtro = k; serieAberta = ''; if (k === 'todos') estante = ''; desenharBiblioteca(); } }, nome, el('span', { class: 'n' }, String(n))));
   }
   const estantes = [...new Set(todos.map((l) => l.estante).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   for (const e of estantes) {
@@ -371,7 +387,7 @@ function desenharContinuar() {
       capaEl(l),
       el('div', {},
         el('div', { class: 'rotulo' }, 'Continuar lendo'),
-        el('h2', {}, l.titulo),
+        el('h2', {}, nomeExibido(l)),
         el('div', { class: 'autor' }, l.autor || ''),
         el('div', { class: 'pct' }, `página ${l.pagina} de ${l.paginas || '?'} · ${pct(l)}% · ${K.Leitura.tempo(l.segundos)} lidos`),
         el('div', { class: 'progresso' }, el('i', { style: `width:${pct(l)}%` })),
@@ -465,16 +481,18 @@ async function abrirLivro(l) {
   L.livro = l;
   $('#biblioteca').hidden = true; $('#leitor').hidden = false;
   if (APK) APK.leitor(true);
-  $('#lTitulo').textContent = l.titulo + (l.autor ? ' — ' + l.autor : '');
+  $('#lTitulo').textContent = nomeExibido(l) + (l.autor ? ' — ' + l.autor : '');
+  $('#fimCap').hidden = true;
+  $('#secManga').hidden = !ehQuadrinho(l);
   document.title = l.titulo + ' · KOFlibrary';
   const box = $('#paginas'); box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Abrindo...'));
   prepararPintor();
   const ativo = ++L.ativo;
   let doc;
   try {
-    doc = await abrirPdf(fontes.get(l.id));
+    doc = await abrirDocumento(l);
   } catch (e) {
-    box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Não deu pra abrir esse PDF: ' + (e.message || e)));
+    box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Não deu pra abrir esse arquivo: ' + (e.message || e)));
     return;
   }
   if (ativo !== L.ativo) { fecharPdf(doc); return; }
@@ -484,7 +502,8 @@ async function abrirLivro(l) {
   L.tamanhos = Array.from({ length: doc.numPages }, () => [p1.width, p1.height]);
   L.zoom = l.zoom || 'largura';
   L.maxVista = l.pagina;
-  montarPaginas();
+  L.modo = doc.quadrinho ? modoManga() : null;
+  if (paginado()) montarPaginado(); else montarPaginas();
   irPara(Math.min(Math.max(1, l.pagina || 1), doc.numPages), false);
   l.lido = Date.now(); salvarLivro(l);
   marcarBotoes();
@@ -502,6 +521,8 @@ function montarPaginas() {
   L.desenhadas.clear(); L.fila.clear();
   if (L.observa) L.observa.disconnect();
   box.replaceChildren();
+  box.classList.remove('paginado');
+  box.classList.toggle('webtoon', !!(L.doc && L.doc.quadrinho));
   L.paginas = [];
   L.escala = escalaDe(L.tamanhos[0][0]);
   $('#btZoom').textContent = L.zoom === 'largura' ? '↔ ' + Math.round(L.escala * 100) + '%' : Math.round(L.escala * 100) + '%';
@@ -560,6 +581,7 @@ function apagar(n) {
   if (c) { c.width = 0; c.remove(); L.desenhadas.delete(n); }
 }
 function redesenhar() {
+  if (paginado()) { mostrar(L.mostradas ? L.mostradas[0] : L.atual); return; }
   for (const n of [...L.desenhadas.keys()]) { apagar(n); }
   const box = $('#paginas');
   for (const d of L.paginas) {
@@ -576,6 +598,7 @@ function paginaNaTela() {
 }
 function irPara(n, suave = true) {
   if (!L.doc) return;
+  if (paginado()) { mostrar(n); return; }
   n = Math.max(1, Math.min(L.doc.numPages, n));
   const d = L.paginas[n - 1];
   $('#paginas').scrollTo({ top: d.offsetTop - 12, behavior: suave ? 'smooth' : 'instant' });
@@ -596,6 +619,7 @@ function mudouPagina(n) {
 }
 function zoom(z) {
   if (!L.doc) return;
+  if (paginado()) { L.zoomPag = z === 'largura' ? 1 : Math.max(1, Math.min(4, z / (L.escalaBase || 1))); mostrar(L.atual); return; }
   const n = L.atual, box = $('#paginas');
   const dentro = (box.scrollTop - L.paginas[n - 1].offsetTop) / L.paginas[n - 1].offsetHeight;
   L.zoom = z === 'largura' ? 'largura' : Math.max(0.3, Math.min(5, z));
@@ -611,6 +635,8 @@ function fecharLivro(voltar = true) {
   for (const c of L.desenhadas.values()) c.width = 0;
   L.desenhadas.clear(); L.fila.clear();
   if (L.doc) fecharPdf(L.doc);
+  $('#paginas').classList.remove('paginado', 'webtoon');
+  L.modo = null; L.mostradas = null;
   L.doc = null; L.livro = null; L.paginas = [];
   $('#painelTemas').hidden = true; $('#painelNotas').hidden = true;
   if (voltar) {
@@ -653,6 +679,9 @@ function desenharPainelTemas() {
   }
   $('#ajBrilho').value = a.brilho; $('#ajContraste').value = a.contraste; $('#ajQuente').value = a.quente; $('#ajCores').checked = a.cores;
   $('#ajSoEste').checked = !!(L.livro && L.livro.leitura);
+  const m = modoManga();
+  for (const b of document.querySelectorAll('#direcoes button')) b.classList.toggle('ativo', b.dataset.d === m.direcao);
+  $('#mgDupla').checked = m.dupla; $('#mgCortar').checked = m.cortar;
 }
 function alternarPainel(qual) {
   const t = $('#painelTemas'), n = $('#painelNotas');
@@ -766,8 +795,13 @@ function ligarEventos() {
   });
 
   $('#btVoltar').onclick = () => fecharLivro();
-  $('#btAnt').onclick = () => irPara(L.atual - 1);
-  $('#btProx').onclick = () => irPara(L.atual + 1);
+  $('#btAnt').onclick = () => passo(-1);
+  $('#btProx').onclick = () => passo(1);
+  $('#btFimProx').onclick = () => { const p = proximoCapitulo(L.livro); if (p) abrirLivro(p); };
+  $('#btFimVoltar').onclick = () => fecharLivro();
+  for (const b of document.querySelectorAll('#direcoes button')) b.onclick = () => mudarManga({ direcao: b.dataset.d });
+  $('#mgDupla').onchange = (e) => mudarManga({ dupla: e.target.checked });
+  $('#mgCortar').onchange = (e) => mudarManga({ cortar: e.target.checked });
   $('#lPagina').onchange = () => { const n = parseInt($('#lPagina').value, 10); if (n) irPara(n); $('#paginas').focus(); };
   $('#btMenos').onclick = () => zoom(L.escala / 1.15);
   $('#btMais').onclick = () => zoom(L.escala * 1.15);
@@ -787,7 +821,7 @@ function ligarEventos() {
   $('#ajZerar').onclick = () => ajustar({ brilho: 0, contraste: 100, quente: 0, cores: true });
 
   $('#paginas').addEventListener('scroll', () => {
-    if (!L.doc) return;
+    if (!L.doc || paginado()) return;
     const n = paginaNaTela();
     if (n !== L.atual || +$('#lPagina').value !== n) mudouPagina(n);
   }, { passive: true });
@@ -798,11 +832,13 @@ function ligarEventos() {
   }, { passive: false });
   let largura = innerWidth;
   addEventListener('resize', () => {
+    if (paginado()) { clearTimeout(zoom.t); zoom.t = setTimeout(() => mostrar(L.atual), 150); return; }
     if (L.doc && L.zoom === 'largura' && Math.abs(innerWidth - largura) > 30) { largura = innerWidth; clearTimeout(zoom.t); zoom.t = setTimeout(() => zoom('largura'), 150); }
   });
 
   addEventListener('keydown', (e) => {
-    if (e.target.matches('input, textarea, select') || document.querySelector('dialog[open]')) return;
+    // caixinha e régua do painel não seguram as teclas (só campo de texto e lista)
+    if (e.target.matches('input:not([type=checkbox]):not([type=range]), textarea, select') || document.querySelector('dialog[open]')) return;
     if ($('#leitor').hidden) {
       if (e.key === '/' || (e.ctrlKey && e.key === 'f')) { e.preventDefault(); $('#busca').focus(); }
       return;
@@ -812,8 +848,9 @@ function ligarEventos() {
     if (avancar && !(k === ' ' && e.shiftKey)) {
       e.preventDefault();
       // seta pros lados = página inteira; PageDown/espaço também
-      irPara(L.atual + avancar, false);
-    } else if (k === ' ' && e.shiftKey) { e.preventDefault(); irPara(L.atual - 1, false); }
+      // mangá direita->esquerda: a seta pra esquerda avança (como virar a página do livro japonês)
+      passo(k.startsWith('Arrow') ? avancar * sentido() : avancar);
+    } else if (k === ' ' && e.shiftKey) { e.preventDefault(); passo(-1); }
     else if (k === 'Home') { e.preventDefault(); irPara(1, false); }
     else if (k === 'End') { e.preventDefault(); irPara(L.doc.numPages, false); }
     else if (k === '+' || k === '=') zoom(L.escala * 1.15);
@@ -824,11 +861,300 @@ function ligarEventos() {
     else if (k === 'b' || k === 'B') alternarMarcador();
     else if (k === 'f' || k === 'F') $('#btCheia').click();
     else if (k === 'Escape') {
-      if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { $('#painelTemas').hidden = $('#painelNotas').hidden = true; $('#btTemas').classList.remove('ligado'); $('#btNotas').classList.remove('ligado'); }
+      if (!$('#fimCap').hidden) $('#fimCap').hidden = true;
+      else if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); $('#paginas').focus(); }
       else if (!document.fullscreenElement) fecharLivro();
     }
   });
   addEventListener('beforeunload', () => { if (L.livro) salvarLivro(L.livro); });
+}
+
+// ---------------------------------------------------------------- mangá e HQ (.cbz, .cbr)
+// .cbz é um zip de imagens: o índice e o lugar de cada página vêm do núcleo em Kof (Zip/Indice), e a página lê só os
+// bytes da imagem que vai mostrar (no celular por Range). .cbr é RAR: o unrar em WebAssembly (web/vendor/unrar) abre.
+// O "documento" de imagens tem a mesma cara do documento do pdf.js (numPages, getPage, render), então o leitor de
+// rolagem (webtoon) é o mesmo do PDF; o paginado (mangá, uma ou duas páginas por vez) está aqui embaixo.
+const IMAGEM = /\.(jpe?g|png|webp|gif|avif|bmp)$/i;
+const tipoDe = (nome) => (/\.cbz$/i.test(nome) ? 'cbz' : /\.cbr$/i.test(nome) ? 'cbr' : 'pdf');
+const ehQuadrinho = (l) => !l.grupo && tipoDe(l.arquivo) !== 'pdf';
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp' };
+const mimeDe = (n) => MIME[n.split('.').pop().toLowerCase()] || 'application/octet-stream';
+const ordemNatural = (a, b) => { const x = K.Capitulo.chave(a), y = K.Capitulo.chave(b); return x < y ? -1 : x > y ? 1 : 0; };
+
+// série, volume e capítulo (Kof: Capitulo). Arquivo sem nome de série ("Cap 25.cbz") fica com a da pasta.
+function marcarQuadrinho(l, caminho) {
+  if (!ehQuadrinho(l)) return l;
+  let serie = K.Capitulo.serie(l.arquivo);
+  const pastas = (caminho || '').split('/').slice(0, -1);
+  if ((!serie || /^(cap|capitulo|chapter|ch|vol|volume|v|c|\d+)$/i.test(K.Busca.normaliza(serie).trim())) && pastas.length) serie = pastas[pastas.length - 1];
+  l.serie = serie; l.cap = K.Capitulo.capitulo(l.arquivo); l.vol = K.Capitulo.volume(l.arquivo);
+  if (l.autor && K.Busca.normaliza(l.autor).trim() === K.Busca.normaliza(serie).trim()) l.autor = '';
+  return l;
+}
+const numCap = (v) => String(v / 1000).replace('.', ',');
+function rotuloCap(l) {
+  const r = [];
+  if (l.vol >= 0) r.push('Vol. ' + numCap(l.vol));
+  if (l.cap >= 0) r.push('Cap. ' + numCap(l.cap));
+  return r.length ? r.join(' · ') : l.titulo;
+}
+const nomeExibido = (l) => (ehQuadrinho(l) && l.serie ? `${l.serie} · ${rotuloCap(l)}` : l.titulo);
+function ordemCapitulos(a, b) {
+  const va = a.vol >= 0 ? a.vol : -1, vb = b.vol >= 0 ? b.vol : -1;
+  if (va !== vb && va >= 0 && vb >= 0) return va - vb;
+  if (a.cap >= 0 && b.cap >= 0 && a.cap !== b.cap) return a.cap - b.cap;
+  if (va !== vb) return va - vb;
+  return ordemNatural(a.arquivo, b.arquivo);
+}
+function proximoCapitulo(l) {
+  if (!l || !ehQuadrinho(l)) return null;
+  const caps = [...livros.values()].filter((x) => ehQuadrinho(x) && x.serie === l.serie).sort(ordemCapitulos);
+  return caps[caps.indexOf(l) + 1] || null;
+}
+
+// biblioteca: a série com mais de um capítulo vira um cartão só (a não ser na busca, que mostra os capítulos)
+let serieAberta = '';
+function agruparSeries(lista, buscando) {
+  if (buscando || serieAberta) return lista;
+  const series = new Map(), fora = [];
+  for (const l of lista) {
+    if (!ehQuadrinho(l)) { fora.push(l); continue; }
+    if (!series.has(l.serie)) series.set(l.serie, []);
+    series.get(l.serie).push(l);
+  }
+  for (const [serie, caps] of series) {
+    if (caps.length === 1) { fora.push(caps[0]); continue; }
+    caps.sort(ordemCapitulos);
+    const lidos = caps.filter((c) => situacao(c) === 'terminados').length;
+    fora.push({
+      grupo: true, id: 'serie:' + serie, serie, titulo: serie, autor: caps.find((c) => c.autor)?.autor || '', itens: caps,
+      lido: Math.max(...caps.map((c) => c.lido || 0)), adicionado: Math.max(...caps.map((c) => c.adicionado || 0)),
+      lidos, paginas: caps.length, pagina: lidos, terminado: lidos === caps.length, favorito: caps.some((c) => c.favorito),
+    });
+  }
+  return fora;
+}
+function cartaoSerie(g) {
+  const atual = g.itens.filter((c) => c.lido && situacao(c) !== 'terminados').sort((a, b) => b.lido - a.lido)[0];
+  const p = Math.round((g.lidos / g.itens.length) * 100);
+  return el('div', { class: 'livro serie', 'data-id': g.id, title: g.serie, onclick: () => { serieAberta = g.serie; limiteGrade = 240; desenharBiblioteca(); scrollTo(0, 0); } },
+    el('div', { class: 'pilha' }, capaEl(g.itens[0])),
+    el('span', { class: 'formato' }, `${g.itens.length} caps`),
+    g.terminado ? el('span', { class: 'selo' }, '✓ lido') : null,
+    el('div', { class: 'titulo' }, '🗾 ' + g.serie),
+    el('div', { class: 'autor' }, atual ? 'lendo ' + rotuloCap(atual) : g.autor || ' '),
+    el('div', { class: 'progresso' }, el('i', { style: `width:${p}%` })),
+    el('div', { class: 'pct' }, el('span', {}, `${g.lidos} de ${g.itens.length} lidos`), el('span', {}, g.lidos ? p + '%' : '')));
+}
+
+// ---- abrir os arquivos
+async function abrirDocumento(l) {
+  const fonte = fontes.get(l.id);
+  return ehQuadrinho(l) ? abrirQuadrinho(fonte, l) : abrirPdf(fonte);
+}
+// bytes [ini, fim) da fonte: no celular um pedido com Range; no PC um pedaço do arquivo
+async function pedaco(fonte, arquivo, ini, fim) {
+  if (fonte.url) {
+    const r = await fetch(fonte.url, { headers: { Range: `bytes=${ini}-${fim - 1}` } });
+    const b = new Uint8Array(await r.arrayBuffer());
+    return r.status === 200 && b.length > fim - ini ? b.subarray(ini, fim) : b;   // quem não entende Range manda tudo
+  }
+  return new Uint8Array(await arquivo.slice(ini, fim).arrayBuffer());
+}
+async function inflar(dados) {
+  const s = new Blob([dados]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+async function paginasDoZip(fonte, tamanho) {
+  const arquivo = fonte.url ? null : await fonte();
+  if (arquivo) tamanho = arquivo.size;
+  const ini = Math.max(0, tamanho - 65557);
+  const cauda = await pedaco(fonte, arquivo, ini, tamanho);
+  const p = K.Zip.fimCentral(cauda, cauda.length);
+  if (p < 0) throw new Error('não é um .cbz (zip) válido');
+  const cIni = K.Zip.inicioCentral(cauda, p), cTam = K.Zip.tamanhoCentral(cauda, p);
+  if (cIni < 0 || cTam < 0) throw new Error('arquivo grande demais (mais de 2 GB)');
+  const cd = cIni >= ini ? cauda.subarray(cIni - ini, cIni - ini + cTam) : await pedaco(fonte, arquivo, cIni, cIni + cTam);
+  const idx = new K.Indice(cd, cd.length, K.Zip.quantos(cauda, p));
+  if (idx.cifrado()) throw new Error('esse arquivo tem senha');
+  const utf8 = new TextDecoder('utf-8');
+  const itens = [];
+  for (let i = 0; i < idx.quantos(); i++) {
+    const nome = utf8.decode(cd.subarray(idx.nomeIni(i), idx.nomeIni(i) + idx.nomeLen(i)));
+    const base = nome.split('/').pop();
+    if (!IMAGEM.test(nome) || nome.startsWith('__MACOSX') || base.startsWith('.')) continue;
+    itens.push({ nome, metodo: idx.metodo(i), comp: idx.comprimido(i), local: idx.local(i) });
+  }
+  itens.sort((a, b) => ordemNatural(a.nome, b.nome));
+  return {
+    nomes: itens.map((x) => x.nome),
+    async imagem(k) {
+      const it = itens[k];
+      const d = K.Zip.inicioDados(await pedaco(fonte, arquivo, it.local, it.local + 30));
+      if (d < 0) throw new Error('zip estragado');
+      let dados = await pedaco(fonte, arquivo, it.local + d, it.local + d + it.comp);
+      if (it.metodo === 8) dados = await inflar(dados);
+      else if (it.metodo !== 0) throw new Error('compressão do zip que eu não leio (' + it.metodo + ')');
+      return new Blob([dados], { type: mimeDe(it.nome) });
+    },
+  };
+}
+// o unrar é um só pra página inteira: um RAR por vez
+let filaRar = Promise.resolve(), wasmRar = null;
+const naFilaRar = (f) => (filaRar = filaRar.then(f, f));
+async function paginasDoRar(fonte) {
+  const dados = fonte.url ? await (await fetch(fonte.url)).arrayBuffer() : await (await fonte()).arrayBuffer();
+  if (!wasmRar) wasmRar = Uint8Array.from(atob(UNRAR_WASM), (c) => c.charCodeAt(0)).buffer;
+  const abrir = () => KofUnrar.createExtractorFromData({ wasmBinary: wasmRar, data: dados });
+  const lista = await naFilaRar(async () => [...(await abrir()).getFileList().fileHeaders]
+    .filter((h) => !h.flags.directory && IMAGEM.test(h.name) && !h.name.split('/').pop().startsWith('.')).map((h) => h.name).sort(ordemNatural));
+  return {
+    nomes: lista,
+    imagem: (k) => naFilaRar(async () => {
+      const f = [...(await abrir()).extract({ files: [lista[k]] }).files][0];
+      if (!f || !f.extraction) throw new Error('não consegui tirar ' + lista[k] + ' do RAR');
+      return new Blob([f.extraction], { type: mimeDe(lista[k]) });
+    }),
+  };
+}
+// corta as bordas brancas: o Kof (Bordas) mede numa cópia pequena da página
+function medirBordas(bmp) {
+  const w = 160, h = Math.max(8, Math.round((bmp.height / bmp.width) * 160));
+  const c = new OffscreenCanvas(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const [x0, y0, x1, y1] = K.Bordas.medir(d, w, h);
+  const fx = bmp.width / w, fy = bmp.height / h;
+  return [Math.floor(x0 * fx), Math.floor(y0 * fy), Math.ceil((x1 - x0) * fx), Math.ceil((y1 - y0) * fy)];
+}
+async function abrirQuadrinho(fonte, l) {
+  const pags = tipoDe(l.arquivo) === 'cbr' ? await paginasDoRar(fonte) : await paginasDoZip(fonte, l.tamanho);
+  if (!pags.nomes.length) throw new Error('não achei nenhuma imagem dentro do arquivo');
+  const cache = new Map(), uso = [];
+  const cortar = !!(L.livro === l && L.modo ? L.modo.cortar : modoManga().cortar);
+  const doc = {
+    numPages: pags.nomes.length, quadrinho: true,
+    loadingTask: { destroy: async () => { for (const p of cache.values()) p.then((x) => x.bmp.close(), () => {}); cache.clear(); } },
+    getMetadata: async () => ({ info: {} }),
+    bitmap(n) {
+      let p = cache.get(n);
+      if (!p) {
+        p = pags.imagem(n - 1).then((b) => createImageBitmap(b)).then((bmp) => ({ bmp, corte: cortar ? medirBordas(bmp) : null }));
+        cache.set(n, p);
+        uso.push(n);
+        while (cache.size > 14) { const v = uso.shift(); if (v !== n && cache.has(v)) { cache.get(v).then((x) => x.bmp.close(), () => {}); cache.delete(v); } }
+      }
+      return p;
+    },
+    async getPage(n) {
+      const { bmp, corte } = await doc.bitmap(n);
+      const [cx, cy, cw, ch] = corte || [0, 0, bmp.width, bmp.height];
+      return {
+        getViewport: ({ scale }) => ({ width: cw * scale, height: ch * scale, scale }),
+        render: ({ canvasContext, viewport }) => ({ promise: Promise.resolve().then(() => {
+          canvasContext.imageSmoothingQuality = 'high';
+          canvasContext.drawImage(bmp, cx, cy, cw, ch, 0, 0, viewport.width, viewport.height);
+        }) }),
+      };
+    },
+  };
+  return doc;
+}
+
+// ---- leitor paginado (mangá): uma página, ou duas lado a lado em tela larga; direita->esquerda por padrão
+function modoManga() { return Object.assign({ direcao: 'rtl', dupla: true, cortar: false }, config.manga || {}); }
+const paginado = () => !!(L.doc && L.doc.quadrinho && L.modo && L.modo.direcao !== 'vertical');
+const sentido = () => (paginado() && L.modo.direcao === 'rtl' ? -1 : 1);   // tecla/toque pra "frente" no mangá japonês é pra esquerda
+function passo(d) {
+  if (!L.doc) return;
+  if (!paginado()) { irPara(L.atual + d, false); return; }
+  if (d > 0) {
+    const ultima = Math.max(...(L.mostradas || [L.atual]));
+    if (ultima >= L.doc.numPages) { fimDoCapitulo(); return; }
+    mostrar(ultima + 1);
+  } else {
+    if (!$('#fimCap').hidden) { $('#fimCap').hidden = true; return; }
+    const primeira = (L.mostradas || [L.atual])[0];
+    if (primeira <= 1) return;
+    mostrar(primeira - 1, true);
+  }
+}
+function montarPaginado() {
+  const box = $('#paginas');
+  if (L.observa) L.observa.disconnect();
+  for (const c of L.desenhadas.values()) c.width = 0;
+  L.desenhadas.clear(); L.fila.clear();
+  L.paginas = []; L.mostradas = null; L.zoomPag = 1;
+  box.replaceChildren(el('div', { class: 'folha' + (L.modo.direcao === 'rtl' ? ' rtl' : '') }));
+  box.classList.add('paginado');
+  marcarBotoes();
+}
+// página larga (página dupla desenhada junto) fica sozinha; a capa (1) também
+async function larga(n) { const v = (await L.doc.getPage(n)).getViewport({ scale: 1 }); return v.width > v.height * 1.05; }
+async function mostrar(n, voltando = false) {
+  const doc = L.doc; if (!doc) return;
+  n = Math.max(1, Math.min(doc.numPages, n));
+  const vez = (L.vez = (L.vez || 0) + 1);
+  const box = $('#paginas'), folha = box.querySelector('.folha');
+  const dupla = L.modo.dupla && box.clientWidth > box.clientHeight * 1.1 && L.zoomPag === 1;
+  let pares = [n];
+  if (dupla) {
+    if (voltando && n > 2 && !(await larga(n)) && !(await larga(n - 1))) pares = [n - 1, n];
+    else if (!voltando && n > 1 && n < doc.numPages && !(await larga(n)) && !(await larga(n + 1))) pares = [n, n + 1];
+  }
+  const pgs = await Promise.all(pares.map((k) => doc.getPage(k)));
+  if (vez !== L.vez || doc !== L.doc) return;
+  const W = box.clientWidth - 8, H = box.clientHeight - 8;
+  const vs = pgs.map((p) => p.getViewport({ scale: 1 }));
+  const larguraTotal = vs.reduce((a, v) => a + v.width / v.height, 0);   // largura de tudo com altura 1
+  L.escalaBase = Math.min(W / (larguraTotal * Math.max(...vs.map((v) => v.height))), H / Math.max(...vs.map((v) => v.height)));
+  const escala = L.escalaBase * (L.zoomPag || 1);
+  L.escala = escala;   // a pinça do celular parte daqui
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const telas = [];
+  for (let i = 0; i < pgs.length; i++) {
+    const v = pgs[i].getViewport({ scale: escala * dpr });
+    const c = document.createElement('canvas');
+    c.width = Math.round(v.width); c.height = Math.round(v.height);
+    c.style.width = Math.round(v.width / dpr) + 'px'; c.style.height = Math.round(v.height / dpr) + 'px';
+    const ctx = c.getContext('2d', { willReadFrequently: L.tema !== null });
+    await pgs[i].render({ canvas: c, canvasContext: ctx, viewport: v }).promise;
+    pintar(c, ctx);
+    telas.push(c);
+  }
+  if (vez !== L.vez || doc !== L.doc) return;
+  for (const c of folha.querySelectorAll('canvas')) c.width = 0;
+  folha.replaceChildren(...telas);
+  folha.classList.toggle('zoom', L.zoomPag > 1);
+  box.scrollTop = 0; box.scrollLeft = L.modo.direcao === 'rtl' ? box.scrollWidth : 0;
+  $('#fimCap').hidden = true;
+  L.mostradas = pares;
+  mudouPagina(pares[0]);
+  if (pares[pares.length - 1] >= doc.numPages && L.livro && !L.livro.terminado) { L.livro.terminado = true; salvarDepois(L.livro); }
+  marcarPaginas();
+  // já deixa as próximas prontas (virar é na hora)
+  for (let k = pares[pares.length - 1] + 1; k <= Math.min(doc.numPages, pares[pares.length - 1] + 4); k++) doc.bitmap(k).catch(() => {});
+  if (pares[0] > 1) doc.bitmap(pares[0] - 1).catch(() => {});
+}
+function fimDoCapitulo() {
+  const p = proximoCapitulo(L.livro);
+  $('#fimTitulo').textContent = 'Fim de ' + nomeExibido(L.livro);
+  $('#btFimProx').hidden = !p;
+  if (p) $('#btFimProx').textContent = 'Próximo: ' + rotuloCap(p) + ' →';
+  $('#fimCap').hidden = false;
+}
+// muda direção, página dupla ou corte de bordas (vale pra todos os mangás) e reabre a página atual
+async function mudarManga(m) {
+  await guardarConfig('manga', { ...modoManga(), ...m });
+  if (!L.doc || !L.doc.quadrinho) { desenharPainelTemas(); return; }
+  const n = L.atual, l = L.livro;
+  if ('cortar' in m) { await abrirLivro(l); alternarPainel('temas'); return; }   // o corte muda o tamanho das páginas: abre de novo
+  L.modo = modoManga();
+  $('#paginas').classList.remove('paginado');
+  if (paginado()) montarPaginado();
+  else { L.zoom = 'largura'; montarPaginas(); }
+  irPara(n, false);
+  desenharPainelTemas();
 }
 
 // ---------------------------------------------------------------- celular (app Android)
@@ -854,11 +1180,11 @@ function iniciarCelular() {
     if (abrirDepois && livros.get(abrirDepois)) { const l = livros.get(abrirDepois); abrirDepois = null; abrirLivro(l); }
   };
   window.__pastaEscolhida = (ok) => { if (ok) { toast('📁 Lendo a pasta "' + APK.pastaNome() + '"...'); APK.listar(); } };
-  window.__pdfsAdicionados = (n) => { toast(n ? `📚 ${n} PDF${n === 1 ? '' : 's'} adicionado${n === 1 ? '' : 's'}` : 'Nenhum PDF adicionado.'); APK.listar(); };
+  window.__pdfsAdicionados = (n) => { toast(n ? `📚 ${n} arquivo${n === 1 ? '' : 's'} adicionado${n === 1 ? '' : 's'}` : 'Nenhum arquivo adicionado.'); APK.listar(); };
   let espera = 0;
   window.__livroChegou = (nome) => { toast('📥 Chegou do PC: ' + K.Nome.titulo(nome)); clearTimeout(espera); espera = setTimeout(() => APK.listar(), 800); };
   window.__abrirDeFora = (chave) => { if (!$('#leitor').hidden) fecharLivro(); abrirDepois = chave; APK.listar(); };
-  window.__volume = (d) => { if (L.doc) irPara(L.atual + d, false); };
+  window.__volume = (d) => { if (L.doc) passo(d); };
   window.__pausou = () => { if (L.livro) salvarLivro(L.livro); };
   window.__sincronia = (id, json) => {
     let r = '';
@@ -870,6 +1196,7 @@ function iniciarCelular() {
     const d = document.querySelector('dialog[open]');
     if (d) { d.close(); return true; }
     if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); return true; }
+    if (!$('#fimCap').hidden) { $('#fimCap').hidden = true; return true; }
     if (!$('#leitor').hidden) { fecharLivro(); return true; }
     if ($('#busca').value) { $('#busca').value = ''; desenharBiblioteca(); return true; }
     return false;
@@ -918,12 +1245,12 @@ function ligarToque() {
     const rolou = Math.abs(box.scrollTop - ini.topo) > 4;
     ini = null;
     if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && dt < 700 && box.scrollWidth <= box.clientWidth + 2) {
-      irPara(L.atual + (dx < 0 ? 1 : -1), false);   // arrastou pro lado (só sem zoom maior que a tela, senão é rolar)
+      passo((dx < 0 ? 1 : -1) * sentido());   // arrastou pro lado (só sem zoom maior que a tela, senão é rolar)
     } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 400 && !rolou) {
       if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); return; }
       const x = t.clientX / innerWidth;
-      if (x < 0.25) irPara(L.atual - 1, false);
-      else if (x > 0.75) irPara(L.atual + 1, false);
+      if (x < 0.25) passo(-sentido());
+      else if (x > 0.75) passo(sentido());
       else $('#leitor').classList.toggle('limpo');
     }
   });
@@ -934,7 +1261,8 @@ function ligarToque() {
 // O PC manda os registros dele (progresso, notas, marcadores, tempo), o celular junta e devolve os dele, e o PC junta
 // também: os dois ficam iguais. Depois o PC manda os PDFs que o celular ainda não tem. Nada passa pela internet.
 const CAMPOS = ['id', 'arquivo', 'tamanho', 'estante', 'titulo', 'autor', 'ano', 'paginas', 'pagina', 'lido', 'zoom', 'editadoEm',
-  'favorito', 'terminado', 'leitura', 'marcadores', 'marcadoresEm', 'notas', 'notasApagadas', 'segundosPor', 'paginasPor', 'adicionado'];
+  'favorito', 'terminado', 'leitura', 'marcadores', 'marcadoresEm', 'notas', 'notasApagadas', 'segundosPor', 'paginasPor', 'adicionado',
+  'serie', 'cap', 'vol'];
 function paraEnviar(l) { const r = {}; for (const k of CAMPOS) if (l[k] !== undefined) r[k] = l[k]; return r; }
 function maiores(a = {}, b = {}) { const r = { ...a }; for (const [k, v] of Object.entries(b)) r[k] = Math.max(r[k] || 0, v); return r; }
 const soma = (m) => Object.values(m || {}).reduce((a, b) => a + b, 0);
@@ -943,6 +1271,7 @@ function juntarLivro(meu, dele) {
   if (!meu) {
     const r = { ...paraEnviar(dele), caminho: dele.arquivo, noBanco: false, notas: dele.notas || [], marcadores: dele.marcadores || [] };
     r.segundos = soma(r.segundosPor); r.paginasLidas = soma(r.paginasPor);
+    if (ehQuadrinho(r) && r.serie === undefined) marcarQuadrinho(r, r.arquivo);
     return r;
   }
   if ((dele.lido || 0) > (meu.lido || 0)) {

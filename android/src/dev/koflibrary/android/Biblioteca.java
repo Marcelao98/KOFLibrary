@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Os PDFs do celular, de dois lugares:
+ * Os livros do celular (PDF, mangá .cbz/.cbr), de dois lugares:
  * - a pasta de livros que a pessoa escolhe uma vez (seletor de pasta do Android; a permissão fica guardada), com as
  *   subpastas (até 3 níveis; a primeira subpasta é a estante, igual no PC);
  * - a pasta do próprio app (recebidos/), onde caem os livros que vieram do PC (Sincronia) e os abertos de fora
@@ -88,7 +88,7 @@ final class Biblioteca {
         prefs.edit().putString("arvore", t.toString()).apply();
     }
 
-    /** Lista os PDFs: JSON [{n: nome, u: endereço, t: tamanho, c: caminho dentro da pasta, r: veio do PC/de fora}]. */
+    /** Lista os livros e mangás: JSON [{n: nome, u: endereço, t: tamanho, c: caminho dentro da pasta, r: veio do PC/de fora}]. */
     String listar() {
         List<Item> pasta = new ArrayList<Item>(), deFora = new ArrayList<Item>();
         Uri t = arvore();
@@ -113,7 +113,7 @@ final class Biblioteca {
         return j.toString();
     }
 
-    private static boolean ehPdf(String nome) { return nome.toLowerCase().endsWith(".pdf"); }
+    private static boolean ehLivro(String nome) { return Sincronia.ehLivro(nome); }
 
     private static void varrer(ContentResolver cr, Uri t, String doc, String caminho, int prof, List<Item> l) {
         Uri filhos = DocumentsContract.buildChildDocumentsUriUsingTree(t, doc);
@@ -126,7 +126,7 @@ final class Biblioteca {
                 if (nome == null || nome.startsWith(".")) continue;
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                     if (prof < 3) varrer(cr, t, id, caminho + nome + "/", prof + 1, l);
-                } else if (ehPdf(nome)) {
+                } else if (ehLivro(nome)) {
                     l.add(new Item(nome, DocumentsContract.buildDocumentUriUsingTree(t, id), c.isNull(3) ? -1 : c.getLong(3), caminho + nome));
                 }
             }
@@ -143,11 +143,11 @@ final class Biblioteca {
         for (File f : fs) {
             if (f.getName().startsWith(".")) continue;
             if (f.isDirectory()) varrerArquivos(f, caminho + f.getName() + "/", l);
-            else if (ehPdf(f.getName())) l.add(new Item(f.getName(), Uri.fromFile(f), f.length(), caminho + f.getName()));
+            else if (ehLivro(f.getName())) l.add(new Item(f.getName(), Uri.fromFile(f), f.length(), caminho + f.getName()));
         }
     }
 
-    /** Copia um PDF de fora (Abrir com, Compartilhar, ➕ PDF) pra recebidos/. Devolve o arquivo (null = não deu). */
+    /** Copia um arquivo de fora (Abrir com, Compartilhar, ➕) pra recebidos/. Devolve o arquivo (null = não deu). */
     File copiarDeFora(Uri u) {
         String nome = null;
         Cursor c = null;
@@ -157,7 +157,11 @@ final class Biblioteca {
         } catch (Exception e) { /* sem nome */ } finally { if (c != null) c.close(); }
         if (nome == null) nome = u.getLastPathSegment();
         nome = Sincronia.limpo(nome == null ? "livro.pdf" : nome);
-        if (!ehPdf(nome)) nome = nome + ".pdf";
+        if (!ehLivro(nome)) {
+            // sem a extensão no nome (alguns apps mandam só "documento"): vai pelo tipo
+            String tipo = String.valueOf(a.getContentResolver().getType(u));
+            nome = nome + (tipo.contains("rar") || tipo.contains("cbr") ? ".cbr" : tipo.contains("zip") || tipo.contains("cbz") ? ".cbz" : ".pdf");
+        }
         File f = new File(recebidos, nome);
         try {
             InputStream in = a.getContentResolver().openInputStream(u);
@@ -205,7 +209,8 @@ final class Biblioteca {
             h.put("Content-Length", String.valueOf(total));
             h.put("Cache-Control", "no-store");
             if (parte) h.put("Content-Range", "bytes " + ini + "-" + fim + "/" + tam);
-            return new WebResourceResponse("application/pdf", null, parte ? 206 : 200, parte ? "Partial Content" : "OK", h, corpo);
+            String mime = it.nome.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
+            return new WebResourceResponse(mime, null, parte ? 206 : 200, parte ? "Partial Content" : "OK", h, corpo);
         } catch (Exception e) {
             return vazio(500, "Erro");
         }

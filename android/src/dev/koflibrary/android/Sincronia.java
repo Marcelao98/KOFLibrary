@@ -23,7 +23,7 @@ import java.util.Random;
  *   GET  /oi                          -> {"nome": "<celular>", "versao": "..."}
  *   POST /sincronizar  (JSON)         -> a página do celular junta os registros (progresso, notas, marcadores) e
  *                                        devolve os dela + quais livros ela tem o arquivo
- *   PUT  /livro?nome=&estante=&tamanho=  (o PDF)  -> grava em recebidos/<estante>/<nome>
+ *   PUT  /livro?nome=&estante=&tamanho=  (o PDF/.cbz/.cbr)  -> grava em recebidos/<estante>/<nome>
  * Quem junta os registros é a página (o banco dela fica no IndexedDB da WebView): o servidor só repassa (Pagina).
  * GET / sem senha responde uma página "celular achado" (pra testar a rede pelo navegador do PC). Sem nada de Android
  * dentro: dá pra testar no Linux (testes/sincronia.cjs).
@@ -102,7 +102,7 @@ final class Sincronia {
                 responder(c, 200, "application/json", pagina.sincronizar(corpo).getBytes("UTF-8"));
             } else if (metodo.equals("PUT") && caminho.equals("/livro")) {
                 String nome = limpo(q.get("nome")), estante = q.containsKey("estante") ? limpo(q.get("estante")) : "";
-                if (nome.isEmpty() || !nome.toLowerCase().endsWith(".pdf")) { responder(c, 400, "text/plain", "nome".getBytes("UTF-8")); return; }
+                if (nome.isEmpty() || !ehLivro(nome)) { responder(c, 400, "text/plain", "nome".getBytes("UTF-8")); return; }
                 File dir = estante.isEmpty() ? recebidos : new File(recebidos, estante);
                 dir.mkdirs();
                 gravar(in, new File(dir, nome), tam);
@@ -117,6 +117,9 @@ final class Sincronia {
             try { c.close(); } catch (Exception e) { /* já fechado */ }
         }
     }
+
+    /** O que a biblioteca lê: PDF e mangá/HQ (.cbz = zip, .cbr = RAR). */
+    static boolean ehLivro(String nome) { String n = nome.toLowerCase(); return n.endsWith(".pdf") || n.endsWith(".cbz") || n.endsWith(".cbr"); }
 
     /** Nome de arquivo/pasta sem barra nem "..": o PC não escolhe onde gravar fora de recebidos/. */
     static String limpo(String s) {

@@ -17,7 +17,7 @@
     <div class="marca">📚 <b>KOF</b>library</div>
     <input id="busca" type="search" placeholder="Buscar por título, autor ou estante..." autocomplete="off">
     <button id="btPasta" title="Escolher a pasta dos seus livros">📁 Escolher pasta</button>
-    <button id="btPdf" title="Adicionar arquivos PDF soltos">➕ PDF</button>
+    <button id="btPdf" title="Adicionar arquivos soltos (PDF, mangá .cbz/.cbr)">➕ Arquivo</button>
     <button id="btCelular" title="Celular: mandar livros e progresso pro KOFlibrary do celular">📱</button>
     <button id="btAjustes" title="Tema do aplicativo">⚙️</button>
   </header>
@@ -44,7 +44,7 @@
     <div class="soltar">
       <div class="grande">📚</div>
       <h2>Arraste a pasta dos seus livros pra cá</h2>
-      <p>Ou clique em <b>📁 Escolher pasta</b>. O KOFlibrary acha todos os PDFs (as subpastas viram estantes)
+      <p>Ou clique em <b>📁 Escolher pasta</b>. O KOFlibrary acha os PDFs e os mangás (.cbz, .cbr), as subpastas viram estantes
       e lembra da pasta na próxima vez. Seus arquivos não saem do computador.</p>
       <button id="btPasta2">📁 Escolher pasta</button>
     </div>
@@ -79,11 +79,29 @@
     </div>
   </header>
   <div id="lInfo" class="linfo"></div>
-  <div id="paginas"></div>
+  <div id="paginas" tabindex="-1"></div>
+  <div id="fimCap" hidden>
+    <div>
+      <div class="grande">🗾</div>
+      <h3 id="fimTitulo"></h3>
+      <button id="btFimProx" class="principal"></button>
+      <button id="btFimVoltar">← Biblioteca</button>
+    </div>
+  </div>
 
   <aside id="painelTemas" class="painel" hidden>
     <h3>🎨 Tema de leitura</h3>
     <div id="listaTemas"></div>
+    <div id="secManga" hidden>
+      <h4>🗾 Mangá e HQ</h4>
+      <div id="direcoes">
+        <button data-d="rtl" title="Mangá japonês: começa da direita">⬅️ Japonês</button>
+        <button data-d="ltr" title="HQ ocidental: da esquerda pra direita">➡️ Ocidental</button>
+        <button data-d="vertical" title="Webtoon/manhwa: rolando pra baixo">⬇️ Webtoon</button>
+      </div>
+      <label class="marca-op"><input id="mgDupla" type="checkbox"> Duas páginas lado a lado (tela deitada)</label>
+      <label class="marca-op"><input id="mgCortar" type="checkbox"> Cortar as bordas brancas</label>
+    </div>
     <label class="ajuste">☀️ Brilho <input id="ajBrilho" type="range" min="-60" max="60" value="0"></label>
     <label class="ajuste">◐ Contraste <input id="ajContraste" type="range" min="60" max="180" value="100"></label>
     <label class="ajuste">🌙 Luz quente <input id="ajQuente" type="range" min="0" max="100" value="0"></label>
@@ -152,7 +170,7 @@
 
 <div id="soltarAqui" hidden><div>📚 Solte aqui a pasta ou os PDFs</div></div>
 <div id="toast" hidden></div>
-<input id="arquivoPdf" type="file" accept=".pdf,application/pdf" multiple hidden>
+<input id="arquivoPdf" type="file" accept=".pdf,.cbz,.cbr,application/pdf" multiple hidden>
 <input id="arquivoPasta" type="file" webkitdirectory multiple hidden>
 
 <script>

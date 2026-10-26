@@ -1,0 +1,196 @@
+package nucleo
+
+// Mangá e HQ: série, volume e capítulo a partir do nome do arquivo, e a ordem certa
+// (página 2 antes da 10, capítulo 9.5 entre o 9 e o 10).
+//   "One Piece v03 c025.cbz"           -> série One Piece, volume 3, capítulo 25
+//   "[Grupo] Berserk - Cap. 101.5.cbr" -> série Berserk, capítulo 101.5
+//   "Naruto Vol.12.cbz"                -> série Naruto, volume 12
+// Capítulo e volume vêm x1000 (101.5 -> 101500); -1 = não tem.
+class Capitulo {
+    public static Int capitulo(String nome) {
+        var s = base(nome)
+        var marcas = "capitulo |capitulo|chapter |chapter|cap. |cap.|cap |cap|ch. |ch.|ch |ch|#|c".split("|")
+        var i = 0
+        while (i < marcas.length) {
+            var v = depois(s, marcas[i])
+            if (v >= 0) { return v }
+            i++
+        }
+        // sem marca: o último número que não é o volume
+        var vol = volume(nome)
+        var p = s.length() - 1
+        while (p >= 0) {
+            if (digito(s, p)) {
+                var fim = p + 1
+                while (p > 0 && (digito(s, p - 1) || s.substring(p - 1, p) == ".")) { p-- }
+                if (s.substring(p, p + 1) == ".") { p++ }
+                var v = numero(s, p)
+                var antes = s.substring(0, p).trim()
+                var ehVol = antes.endsWith("v") || antes.endsWith("vol") || antes.endsWith("vol.") || antes.endsWith("volume") || antes.endsWith("tomo")
+                if (!ehVol && v != vol) { return v }
+                if (ehVol) { return -1 }
+                p = p - 1
+            } else {
+                p--
+            }
+        }
+        return -1
+    }
+
+    public static Int volume(String nome) {
+        var s = base(nome)
+        var marcas = "volume |volume|vol. |vol.|vol |vol|tomo |tomo|v".split("|")
+        var i = 0
+        while (i < marcas.length) {
+            var v = depois(s, marcas[i])
+            if (v >= 0) { return v }
+            i++
+        }
+        return -1
+    }
+
+    // a série: o nome sem [grupo], (ano), capítulo, volume e números do fim
+    public static String serie(String nome) {
+        var s = nome
+        var p = s.lastIndexOf(".")
+        if (p > 0 && s.length() - p <= 5) { s = s.substring(0, p) }
+        s = s.replace("_", " ")
+        s = tira(s, "[", "]")
+        s = tira(s, "(", ")")
+        var b = baixo(s)
+        // corta na primeira marca de capítulo/volume que vem depois de um espaço
+        var marcas = " capitulo| chapter| cap| ch| vol| volume| tomo| v| c| #| - ".split("|")
+        var corte = s.length()
+        var i = 0
+        while (i < marcas.length) {
+            var k = (" " + b).indexOf(marcas[i])
+            while (k >= 0) {
+                var depoisMarca = k + marcas[i].length()
+                // marca seguida de número (ou " - " em qualquer caso)
+                if (marcas[i] == " - " || (depoisMarca < b.length() + 1 && temNumeroEm(" " + b, depoisMarca))) {
+                    if (k < corte) { corte = k }
+                    k = -1
+                } else {
+                    k = (" " + b).indexOf(marcas[i], k + 1)
+                }
+            }
+            i++
+        }
+        var r = s.substring(0, corte).trim()
+        // números soltos no fim ("Berserk 101")
+        while (r.length() > 0 && ("0123456789. -#".indexOf(r.substring(r.length() - 1)) >= 0)) { r = r.substring(0, r.length() - 1) }
+        r = r.trim()
+        if (r == "") { r = s.trim() }
+        return Nome.capitaliza(r)
+    }
+
+    // chave de ordem "natural": cada número vira 10 dígitos com zeros na frente ("p2" < "p10")
+    public static String chave(String nome) {
+        var s = nome.toLowerCase()
+        var r = ""
+        var i = 0
+        var n = s.length()
+        while (i < n) {
+            if (digito(s, i)) {
+                var j = i
+                while (j < n && digito(s, j)) { j++ }
+                var num = s.substring(i, j)
+                while (num.length() > 1 && num.startsWith("0")) { num = num.substring(1) }
+                while (num.length() < 10) { num = "0" + num }
+                r = r + num
+                i = j
+            } else {
+                r = r + s.substring(i, i + 1)
+                i++
+            }
+        }
+        return r
+    }
+
+    // ---- ajudantes
+    static String base(String nome) {
+        var s = nome
+        var p = s.lastIndexOf("/")
+        if (p >= 0) { s = s.substring(p + 1) }
+        p = s.lastIndexOf(".")
+        if (p > 0 && s.length() - p <= 5) { s = s.substring(0, p) }
+        s = tira(s, "[", "]")
+        s = tira(s, "(", ")")
+        return " " + baixo(s.replace("_", " ").replace("-", " "))
+    }
+
+    // minúsculo e sem acento, mas mantendo a pontuação (o ponto do "101.5", o "#")
+    static String baixo(String s) {
+        var de = "áàâãäéèêëíìîïóòôõöúùûüçñ"
+        var para = "aaaaaeeeeiiiiooooouuuucn"
+        var t = s.toLowerCase()
+        var r = ""
+        var i = 0
+        while (i < t.length()) {
+            var c = t.substring(i, i + 1)
+            var k = de.indexOf(c)
+            if (k >= 0) { r = r + para.substring(k, k + 1) } else { r = r + c }
+            i++
+        }
+        return r
+    }
+
+    // número logo depois da marca (que tem que começar depois de um espaço); -1 = não achou
+    static Int depois(String s, String marca) {
+        var k = s.indexOf(" " + marca)
+        while (k >= 0) {
+            var p = k + 1 + marca.length()
+            if (p < s.length() && digito(s, p)) { return numero(s, p) }
+            k = s.indexOf(" " + marca, k + 1)
+        }
+        return -1
+    }
+
+    static Bool temNumeroEm(String s, Int p) {
+        var q = p
+        while (q < s.length() && (s.substring(q, q + 1) == " " || s.substring(q, q + 1) == ".")) { q++ }
+        return q < s.length() && digito(s, q)
+    }
+
+    // "101.5" a partir de p -> 101500
+    static Int numero(String s, Int p) {
+        var v = 0
+        var i = p
+        while (i < s.length() && digito(s, i)) {
+            v = v * 10 + (s.charAt(i) as Int - 48)
+            i++
+        }
+        v = v * 1000
+        if (i + 1 < s.length() && s.substring(i, i + 1) == "." && digito(s, i + 1)) {
+            var frac = 0
+            var casas = 0
+            i++
+            while (i < s.length() && digito(s, i) && casas < 3) {
+                frac = frac * 10 + (s.charAt(i) as Int - 48)
+                casas++
+                i++
+            }
+            while (casas < 3) { frac = frac * 10
+                casas++ }
+            v = v + frac
+        }
+        return v
+    }
+
+    static Bool digito(String s, Int i) {
+        var c = s.charAt(i) as Int
+        return c >= 48 && c <= 57
+    }
+
+    static String tira(String s, String abre, String fecha) {
+        var r = s
+        var a = r.indexOf(abre)
+        while (a >= 0) {
+            var f = r.indexOf(fecha, a)
+            if (f < 0) { return r }
+            r = r.substring(0, a) + " " + r.substring(f + 1)
+            a = r.indexOf(abre)
+        }
+        return r
+    }
+}

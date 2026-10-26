@@ -178,3 +178,30 @@ html.celular .rodape { display: none; }
   .temas { grid-template-columns: repeat(4, 1fr); }
   dialog { min-width: 0; width: calc(100vw - 24px); }
 }
+
+/* ---------- mangá e HQ ---------- */
+.livro > .formato { position: absolute; left: 6px; top: 6px; background: rgba(20,12,8,.78); color: #f3e6d8; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px; letter-spacing: .04em; z-index: 2; }
+.livro > .selo + .formato { top: 28px; }
+.livro > .selo { z-index: 2; }
+.serie .pilha { position: relative; }
+.serie .pilha::before, .serie .pilha::after { content: ''; position: absolute; inset: 0; border-radius: 6px; background: var(--cartao); box-shadow: 0 2px 6px var(--sombra); }
+.serie .pilha::before { transform: translate(6px, -6px); opacity: .55; }
+.serie .pilha::after { transform: translate(3px, -3px); opacity: .8; }
+.serie .pilha .capa { z-index: 1; }
+#paginas.paginado { display: flex; padding: 4px; overflow: auto; }
+#paginas.paginado .folha { margin: auto; display: flex; gap: 0; align-items: center; justify-content: center; }
+#paginas.paginado .folha.rtl { flex-direction: row-reverse; }
+#paginas.paginado .folha canvas { display: block; box-shadow: 0 3px 14px var(--sombra); background: var(--papel, #fff); }
+#paginas.webtoon .pagina { margin-bottom: 0; box-shadow: none; }
+#fimCap { position: absolute; inset: 52px 0 0 0; display: flex; align-items: center; justify-content: center; background: rgba(10,6,3,.82); z-index: 3; }
+#fimCap > div { background: var(--painel); border-radius: 16px; padding: 26px 30px; text-align: center; display: flex; flex-direction: column; gap: 10px; max-width: 90vw; }
+#fimCap .grande { font-size: 44px; }
+#fimCap h3 { margin: 0 0 6px; }
+#direcoes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#direcoes button { font-size: 12.5px; padding: 6px 4px; }
+#direcoes button.ativo { background: var(--destaque); color: #1a110b; border-color: var(--destaque); }
+#secManga h4 { margin-top: 4px; }
+@media (max-width: 700px) {
+  #paginas.paginado { padding: 0; }
+  #btPdf::before { content: '➕'; }
+}

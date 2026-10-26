@@ -1,0 +1,129 @@
+package nucleo
+
+// Leitor de .zip/.cbz (mangá e HQ são um zip de imagens). Não precisa do arquivo
+// inteiro na memória: a página lê o fim do arquivo (onde fica o índice), o Kof acha
+// o índice e diz onde está cada imagem; a página busca só os bytes daquela imagem.
+//   1. fimCentral(cauda): acha o "fim do diretório central" nos últimos bytes;
+//   2. Indice(bytes do diretório central): nome, método, tamanhos e onde começa cada arquivo;
+//   3. inicioDados(cabeçalho local): quantos bytes pular até os dados de um arquivo.
+// Também faz o CRC-32, pra montar .cbz (a pasta de imagens que vai pro celular).
+class Zip {
+    public static Int u16(Int[] b, Int i) {
+        return (b[i] & 0xFF) | ((b[i + 1] & 0xFF) << 8)
+    }
+
+    // 32 bits sem sinal não cabe em Int: arquivo de até 2 GB (passou disso, vem negativo e a página recusa)
+    public static Int u32(Int[] b, Int i) {
+        return (b[i] & 0xFF) | ((b[i + 1] & 0xFF) << 8) | ((b[i + 2] & 0xFF) << 16) | ((b[i + 3] & 0xFF) << 24)
+    }
+
+    // posição da assinatura PK\5\6 (procura de trás pra frente: depois dela só vem o comentário); -1 = não é zip
+    public static Int fimCentral(Int[] cauda, Int n) {
+        var i = n - 22
+        while (i >= 0) {
+            if (cauda[i] == 0x50 && cauda[i + 1] == 0x4B && cauda[i + 2] == 5 && cauda[i + 3] == 6) { return i }
+            i--
+        }
+        return -1
+    }
+
+    // do fim do diretório central (em cauda, na posição p): onde o diretório começa e quanto mede
+    public static Int inicioCentral(Int[] cauda, Int p) { return u32(cauda, p + 16) }
+    public static Int tamanhoCentral(Int[] cauda, Int p) { return u32(cauda, p + 12) }
+    public static Int quantos(Int[] cauda, Int p) { return u16(cauda, p + 10) }
+
+    // cabeçalho local (os primeiros 30 bytes do arquivo dentro do zip): onde começam os dados
+    public static Int inicioDados(Int[] local) {
+        if (u32(local, 0) != 0x04034B50) { return -1 }
+        return 30 + u16(local, 26) + u16(local, 28)
+    }
+
+    // ---- CRC-32 (o mesmo do zip, polinômio 0xEDB88320), em pedaços: crc = atualizar(crc, bytes, n)
+    static Int[] tabela = null
+
+    static Int[] tab() {
+        if (tabela == null) {
+            var t = new Int[256]
+            var n = 0
+            while (n < 256) {
+                var c = n
+                var k = 0
+                while (k < 8) {
+                    if ((c & 1) != 0) { c = 0xEDB88320 ^ (c >>> 1) } else { c = c >>> 1 }
+                    k++
+                }
+                t[n] = c
+                n++
+            }
+            tabela = t
+        }
+        return tabela
+    }
+
+    public static Int crcInicio() { return 0xFFFFFFFF }
+
+    public static Int crcAtualizar(Int crc, Int[] b, Int n) {
+        var t = tab()
+        var c = crc
+        var i = 0
+        while (i < n) {
+            c = t[(c ^ b[i]) & 0xFF] ^ (c >>> 8)
+            i++
+        }
+        return c
+    }
+
+    public static Int crcFim(Int crc) { return crc ^ 0xFFFFFFFF }
+}
+
+// O diretório central lido: uma entrada por arquivo dentro do zip.
+class Indice {
+    Int[] iniNomes
+    Int[] lenNomes
+    Int[] metodos
+    Int[] comprimidos
+    Int[] tamanhos
+    Int[] locais
+    Int[] utf8
+    Int total
+    Bool temCifra
+
+    public constructor(Int[] cd, Int n, Int esperados) {
+        var cap = esperados
+        if (cap < 1) { cap = 1 }
+        this.iniNomes = new Int[cap]
+        this.lenNomes = new Int[cap]
+        this.metodos = new Int[cap]
+        this.comprimidos = new Int[cap]
+        this.tamanhos = new Int[cap]
+        this.locais = new Int[cap]
+        this.utf8 = new Int[cap]
+        this.total = 0
+        this.temCifra = false
+        var p = 0
+        while (p + 46 <= n && this.total < cap && Zip.u32(cd, p) == 0x02014B50) {
+            var flags = Zip.u16(cd, p + 8)
+            if ((flags & 1) != 0) { this.temCifra = true }
+            var k = this.total
+            this.metodos[k] = Zip.u16(cd, p + 10)
+            this.comprimidos[k] = Zip.u32(cd, p + 20)
+            this.tamanhos[k] = Zip.u32(cd, p + 24)
+            this.lenNomes[k] = Zip.u16(cd, p + 28)
+            this.iniNomes[k] = p + 46
+            this.locais[k] = Zip.u32(cd, p + 42)
+            if ((flags & 0x800) != 0) { this.utf8[k] = 1 } else { this.utf8[k] = 0 }
+            this.total = k + 1
+            p = p + 46 + Zip.u16(cd, p + 28) + Zip.u16(cd, p + 30) + Zip.u16(cd, p + 32)
+        }
+    }
+
+    public Int quantos() { return this.total }
+    public Int nomeIni(Int i) { return this.iniNomes[i] }
+    public Int nomeLen(Int i) { return this.lenNomes[i] }
+    public Int metodo(Int i) { return this.metodos[i] }
+    public Int comprimido(Int i) { return this.comprimidos[i] }
+    public Int tamanho(Int i) { return this.tamanhos[i] }
+    public Int local(Int i) { return this.locais[i] }
+    public Bool emUtf8(Int i) { return this.utf8[i] == 1 }
+    public Bool cifrado() { return this.temCifra }
+}
