@@ -1,3 +1,7 @@
 dist/
 node_modules/
 *.pdf
+publicado/atualizacao.log
+atualizacao.log
+.versao.novo
+nao-atualizar

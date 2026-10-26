@@ -18,4 +18,7 @@ python3 "$AQUI/juntar.py" "$T/out" "$AQUI" "$RAIZ/dist/KOFlibrary.html"
 cp "$RAIZ/koflibrary.sh" "$RAIZ/KOFlibrary.bat" "$RAIZ/dist/"
 # versao.txt do APK: o html é o mesmo do PC; casca = a do MainActivity.java (página nova que precisa de Java novo pede APK novo)
 CASCA="$(sed -n 's/.*static final int CASCA = \([0-9]*\);.*/\1/p' "$RAIZ/android/src/dev/koflibrary/android/MainActivity.java")"
-printf 'versao=%s\ncasca=%s\nhtml=KOFlibrary.html:%s\n' "$KOFLIBRARY_BUILD" "$CASCA" "$(stat -c %s "$RAIZ/dist/KOFlibrary.html")" > "$RAIZ/dist/versao.txt"
+# o mesmo versao.txt serve o APK (versao, casca, html) e o koflibrary.sh/.bat do PC (versao, html, lancador_linux)
+LANCADOR="$(sed -n 's/^LANCADOR=\([0-9]*\).*/\1/p' "$RAIZ/koflibrary.sh")"
+printf 'versao=%s\ncasca=%s\nhtml=KOFlibrary.html:%s\nlancador_linux=%s\n' "$KOFLIBRARY_BUILD" "$CASCA" "$(stat -c %s "$RAIZ/dist/KOFlibrary.html")" "$LANCADOR" > "$RAIZ/dist/versao.txt"
+python3 "$RAIZ/android/icone.py" "$T/icone" && cp "$T/icone/mipmap-xxxhdpi/ic_launcher.png" "$RAIZ/dist/KOFlibrary.png"

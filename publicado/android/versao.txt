@@ -1,3 +1,4 @@
-versao=202610260420
+versao=202610260425
 casca=2
 html=KOFlibrary.html:2883241
+lancador_linux=2
