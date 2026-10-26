@@ -18,6 +18,7 @@
     <input id="busca" type="search" placeholder="Buscar por título, autor ou estante..." autocomplete="off">
     <button id="btPasta" title="Escolher a pasta dos seus livros">📁 Escolher pasta</button>
     <button id="btPdf" title="Adicionar arquivos PDF soltos">➕ PDF</button>
+    <button id="btCelular" title="Celular: mandar livros e progresso pro KOFlibrary do celular">📱</button>
     <button id="btAjustes" title="Tema do aplicativo">⚙️</button>
   </header>
 
@@ -111,6 +112,27 @@
   <div id="listaApp"></div>
   <p class="dica">Atalhos no leitor: ← → páginas · + − zoom · 0 ajustar · T temas · B marcador · N notas · F tela cheia · Esc voltar</p>
   <button value="ok" onclick="this.closest('dialog').close()">Fechar</button>
+</dialog>
+
+<dialog id="dlgCelular">
+  <h3>📱 PC e celular</h3>
+  <div id="sincCelular"></div>
+  <div id="sincPc">
+    <p class="dica">Abra o KOFlibrary no celular e toque em 📱: ele mostra o endereço e a senha. Os dois na mesma Wi-Fi.
+    Depois disso o PC manda os livros e o progresso sozinho, enquanto os dois estiverem abertos.</p>
+    <label>Endereço do celular <input id="sincEndereco" placeholder="192.168.0.15:8643" inputmode="url" autocomplete="off"></label>
+    <label>Senha <input id="sincSenha" placeholder="1234" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+    <label>Mandar pro celular
+      <select id="sincEnviar">
+        <option value="lendo">Os livros que estou lendo e os ⭐ favoritos</option>
+        <option value="todos">Todos os livros da biblioteca</option>
+        <option value="nenhum">Nenhum (só o progresso e as notas)</option>
+      </select>
+    </label>
+    <p id="sincStatus" class="sinc-status"></p>
+    <button id="btSincronizar" class="principal">🔄 Sincronizar agora</button>
+  </div>
+  <div class="botoes"><span></span><button onclick="this.closest('dialog').close()">Fechar</button></div>
 </dialog>
 
 <dialog id="dlgEditar">

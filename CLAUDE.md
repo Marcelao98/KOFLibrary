@@ -9,9 +9,30 @@ Saída: **um html só** (`dist/KOFlibrary.html`, ~2,4 MB) que abre por file:// n
   PDF solto vai pro IndexedDB), capas, busca, filtros, Continuar lendo, leitor com rolagem contínua (páginas
   desenhadas só perto da tela), 22 temas que repintam a página (Pintor.kf), brilho/contraste/luz quente, por livro ou
   global, marcadores, notas por página, exportar .md, tempo lido, temas do app.
+- Corrigido 26/10: fechar um PDF e abrir outro logo em seguida quebrava o worker do pdf.js (`fechando` no abrirPdf).
 - Combinado pra **v2** (ele escolhe a ordem): marca-texto (camada de texto do pdf.js + retângulos normalizados),
   busca no livro, sumário, cortar margens, estatísticas, modo livro/página, ler em voz alta, Android, EPUB.
 - Falta o Marcelo testar com os livros dele (pasta grande, PDF escaneado).
+
+## APK + sincronia (branch `apk`, 26/10)
+- `android/`: casca Java (WebView) com o MESMO html do PC em assets/index.html, servido em https://appassets.androidplatform.net
+  (copiado do KOFstation, pacote dev.koflibrary.android). `MainActivity` (ponte `KOFlibraryApk`: listar, pastaEscolher,
+  adicionarPdf, salvar, sincronia, responder, leitor, pronta), `Biblioteca` (pasta SAF + recebidos/ = getExternalFilesDir;
+  serve /pasta?u= com Range: o pdf.js abre por url aos pedaços), `Sincronia` (HTTP na 8643, senha de 4 números fixa
+  por celular), `Atualizador` (lê publicado/android/versao.txt na main: versao, casca, html=KOFlibrary.html:tamanho).
+  `CASCA` no MainActivity: sobe a cada mudança no Java. Montar: `web/compilar.sh && android/construir-apk.sh`
+  (apt: aapt apksigner zipalign libandroid-23-java dalvik-exchange android-sdk-platform-23); chave de TESTE no repo.
+- Sincronia: o PC (página file://) chama o celular: POST /sincronizar (registros sem blobs, `paraEnviar`) -> a página do
+  celular junta (`juntarLivro`: progresso pelo `lido` mais novo, título/autor/favorito/tema por `editadoEm`, marcadores por
+  `marcadoresEm`, notas = união menos `notasApagadas`, tempo/páginas por aparelho em `segundosPor`/`paginasPor`, total =
+  soma) e devolve os dela + `temArquivo`; o PC junta e manda PUT /livro dos que faltam (opção lendo/todos/nenhum).
+  Automático a cada 2 min e ao fechar livro no PC. `config.aparelho` = pc-xxxx / cel-xxxx.
+- Celular na página: `html.celular`, toque (meio = barras, beiradas/arrastar = página, pinça = zoom), volume
+  (`__volume`), voltar (`__voltar`), painéis viram gaveta de baixo.
+- Testes: `testes/sincronia.cjs` (Java Sincronia de verdade + página do "celular" com ponte de mentira + PC file://).
+- Chrome pode bloquear file:// -> IP da rede local (Local Network Access): a página explica (permitir no cadeado).
+  Desligar isso por flag no lançador foi barrado pela checagem de segurança: NÃO fazer.
+- Falta testar no aparelho dele: pasta SAF, Abrir com, volume, sincronia na Wi-Fi de verdade.
 
 ## Como falar com o Marcelo
 Português do Brasil, informal, direto; ele escreve rápido por voz (muitos erros de digitação). Liga pra economia de

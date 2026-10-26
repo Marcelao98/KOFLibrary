@@ -20,6 +20,23 @@ Quer que abra numa janela própria, sem barra de endereço? Deixe do lado do htm
 > Seus PDFs não saem do computador. O KOFlibrary guarda no navegador só o que é dele: capas, progresso, notas e temas.
 > A pasta fica lembrada (no Chrome/Edge); se o navegador pedir, é só clicar em **Liberar a pasta**.
 
+## 📱 No celular (Android)
+
+1. Baixe o [**KOFlibrary.apk**](https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/android/apk/KOFlibrary.apk) no celular
+   e instale (o Android pede uma vez pra liberar "instalar apps desta fonte"). Android 7 ou mais novo.
+2. Toque em **📁** e escolha a pasta dos seus livros no celular, e/ou mande os livros do PC (abaixo).
+3. Leia: toque no meio esconde as barras, nas beiradas (ou arrastando pro lado) vira a página, pinça dá zoom e as
+   **teclas de volume viram a página**. "Abrir com → KOFlibrary" abre qualquer PDF do WhatsApp, Drive, Arquivos...
+
+**Livros do PC no celular:** com os dois na mesma Wi-Fi, toque em **📱** no celular: aparecem um endereço e uma senha.
+No PC, clique em **📱**, digite os dois e escolha o que mandar (os que você está lendo, todos ou só o progresso).
+Pronto: o PC manda os PDFs que faltam e **o progresso, as notas e os marcadores ficam iguais nos dois**, sozinho, a cada
+2 minutos enquanto o KOFlibrary estiver aberto no PC e no celular. Nada passa pela internet.
+O app se atualiza sozinho quando sai versão nova.
+
+> Se o PC não achar o celular: abra `http://<endereço>` no navegador do PC. Se aparecer "✅ Celular achado", a rede
+> está ok e é o navegador bloqueando a página: permita "Dispositivos da rede local" no cadeado ao lado do endereço.
+
 ## ✨ O que tem na versão 1
 
 | | |
@@ -53,7 +70,7 @@ Tudo que é conta mora em [`nucleo/`](nucleo), compilado pra JavaScript pelo alv
 | [`Leitura.kf`](nucleo/Leitura.kf) | %, tempo lido e "faltam ~2 h 10 min" pelo seu ritmo |
 | [`Cor.kf`](nucleo/Cor.kf) | contas de cor |
 
-A interface (biblioteca, leitor, painéis) está em [`web/`](web).
+A interface (biblioteca, leitor, painéis) está em [`web/`](web); o app Android (uma casca em Java com o mesmo html) em [`android/`](android).
 
 ## 🔧 Compilar
 
@@ -75,7 +92,6 @@ node testes/gerar-pdfs.cjs /tmp/pdfs && node testes/navegador.cjs dist/KOFlibrar
 - 📊 estatísticas: tempo lido por dia, sequência de dias lendo, meta do ano
 - 📖 modo livro (duas páginas lado a lado) e modo página única com virar de página
 - 🔊 ler em voz alta (voz do próprio sistema)
-- 📱 Android e atualização sozinha, igual ao KOFstation
 - 📚 EPUB, além de PDF
 
 ## Licenças

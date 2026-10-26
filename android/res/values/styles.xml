@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cafe">#1a110b</color>
+    <style name="TemaKof" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/cafe</item>
+        <item name="android:statusBarColor">@color/cafe</item>
+        <item name="android:navigationBarColor">@color/cafe</item>
+    </style>
+</resources>

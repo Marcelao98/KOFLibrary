@@ -4,6 +4,12 @@
 'use strict';
 const K = KofNucleo;
 const VERSAO = '{{VERSAO}}';
+// no celular a página roda dentro do app Android (android/), que dá a ponte KOFlibraryApk
+const APK = window.KOFlibraryApk || null;
+if (APK) {
+  document.documentElement.classList.add('celular');
+  document.querySelector('meta[name=viewport]').content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+}
 const $ = (s) => document.querySelector(s);
 const el = (tag, attrs = {}, ...filhos) => {
   const e = document.createElement(tag);
@@ -34,15 +40,21 @@ class Embutidos {
     throw new Error('não embutido: ' + filename);
   }
 }
-async function abrirPdf(dados) {
+async function abrirPdf(fonte) {
   const lib = await motor();
+  await fechando;
+  // fonte com url (o arquivo servido pelo app Android): o pdf.js busca só os pedaços que vai desenhar
+  const de = fonte.url ? { url: fonte.url, disableAutoFetch: true, disableStream: true, rangeChunkSize: 262144 }
+    : { data: new Uint8Array(await (await fonte()).arrayBuffer()) };
   return lib.getDocument({
-    data: dados, wasmUrl: 'embutido/', useWorkerFetch: false, BinaryDataFactory: Embutidos,
+    ...de, wasmUrl: 'embutido/', useWorkerFetch: false, BinaryDataFactory: Embutidos,
     isEvalSupported: false, enableScripting: false,
   }).promise;
 }
-// o pdf.js 6 fecha o documento pela tarefa que abriu ele
-function fecharPdf(doc) { doc.loadingTask.destroy(); }
+// o pdf.js 6 fecha o documento pela tarefa que abriu ele. Fechar é assíncrono e o trabalhador (worker) é um só:
+// abrir outro antes de terminar de fechar falha ("the worker is being destroyed"), então o abrirPdf espera
+let fechando = Promise.resolve();
+function fecharPdf(doc) { const f = doc.loadingTask.destroy().catch(() => {}); fechando = Promise.all([fechando, f]); return f; }
 
 // ---------------------------------------------------------------- banco (IndexedDB)
 const Banco = {
@@ -79,7 +91,7 @@ async function guardarConfig(k, v) { config[k] = v; await Banco.put('config', v,
 
 // ---------------------------------------------------------------- estado
 const livros = new Map();    // id -> registro (o que vai pro banco)
-const fontes = new Map();    // id -> () => Promise<File>  (de onde ler o PDF nesta sessão)
+const fontes = new Map();    // id -> () => Promise<File>  (de onde ler o PDF nesta sessão; com .url no celular)
 const normal = new Map();    // id -> texto normalizado pra busca (Kof: Busca.normaliza)
 const temas = new K.Temas();
 const pintor = new K.Pintor();
@@ -236,7 +248,7 @@ async function fazerCapas() {
     const faltam = [...livros.values()].filter((l) => fontes.has(l.id) && (!l.temCapa || !l.paginas));
     for (const l of faltam) {
       try {
-        const doc = await abrirPdf(new Uint8Array(await (await fontes.get(l.id)()).arrayBuffer()));
+        const doc = await abrirPdf(fontes.get(l.id));
         l.paginas = doc.numPages;
         try {
           const info = (await doc.getMetadata()).info || {};
@@ -252,7 +264,7 @@ async function fazerCapas() {
         await Banco.put('capas', url, l.id);
         capas.set(l.id, url);
         l.temCapa = true;
-        fecharPdf(doc);
+        await fecharPdf(doc);
       } catch (e) {
         l.temCapa = true; l.erro = String(e.message || e);
       }
@@ -310,7 +322,7 @@ function visiveis() {
 }
 function cartao(l) {
   const p = pct(l);
-  const fav = el('button', { class: 'fav' + (l.favorito ? ' sim' : ''), title: 'Favorito', onclick: (e) => { e.stopPropagation(); l.favorito = !l.favorito; salvarLivro(l); atualizarCartao(l); } }, l.favorito ? '⭐' : '☆');
+  const fav = el('button', { class: 'fav' + (l.favorito ? ' sim' : ''), title: 'Favorito', onclick: (e) => { e.stopPropagation(); l.favorito = !l.favorito; l.editadoEm = Date.now(); salvarLivro(l); atualizarCartao(l); } }, l.favorito ? '⭐' : '☆');
   const ed = el('button', { title: 'Editar', onclick: (e) => { e.stopPropagation(); editar(l); } }, '✏️');
   const c = el('div', { class: 'livro' + (fontes.has(l.id) ? '' : ' fora'), 'data-id': l.id, title: l.caminho, onclick: () => abrirLivro(l) },
     capaEl(l),
@@ -388,7 +400,7 @@ function editar(l) {
   $('#edTitulo').value = l.titulo; $('#edAutor').value = l.autor; $('#edTerminado').checked = !!l.terminado;
   d.onclose = async () => {
     if (d.returnValue === 'ok') {
-      l.titulo = $('#edTitulo').value.trim() || l.titulo; l.autor = $('#edAutor').value.trim(); l.terminado = $('#edTerminado').checked;
+      l.titulo = $('#edTitulo').value.trim() || l.titulo; l.autor = $('#edAutor').value.trim(); l.terminado = $('#edTerminado').checked; l.editadoEm = Date.now();
       normal.delete(l.id); await salvarLivro(l);
     } else if (d.returnValue === 'remover') {
       if (!confirm(`Tirar "${l.titulo}" da biblioteca? O arquivo no seu computador não é apagado.` + (l.notas.length ? ' As anotações deste livro vão junto.' : ''))) return;
@@ -452,6 +464,7 @@ async function abrirLivro(l) {
   fecharLivro(false);
   L.livro = l;
   $('#biblioteca').hidden = true; $('#leitor').hidden = false;
+  if (APK) APK.leitor(true);
   $('#lTitulo').textContent = l.titulo + (l.autor ? ' — ' + l.autor : '');
   document.title = l.titulo + ' · KOFlibrary';
   const box = $('#paginas'); box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Abrindo...'));
@@ -459,7 +472,7 @@ async function abrirLivro(l) {
   const ativo = ++L.ativo;
   let doc;
   try {
-    doc = await abrirPdf(new Uint8Array(await (await fontes.get(l.id)()).arrayBuffer()));
+    doc = await abrirPdf(fontes.get(l.id));
   } catch (e) {
     box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Não deu pra abrir esse PDF: ' + (e.message || e)));
     return;
@@ -477,9 +490,10 @@ async function abrirLivro(l) {
   marcarBotoes();
   $('#paginas').focus();
 }
+const CELULAR = () => !!APK || innerWidth < 700;
 function escalaDe(w) {
   const box = $('#paginas');
-  if (L.zoom === 'largura') return Math.min(box.clientWidth - 110, 960) / w;
+  if (L.zoom === 'largura') return (CELULAR() ? box.clientWidth - 8 : Math.min(box.clientWidth - 110, 960)) / w;
   return L.zoom;
 }
 function montarPaginas() {
@@ -496,7 +510,7 @@ function montarPaginas() {
       const n = +e.target.dataset.n;
       if (e.isIntersecting) desenhar(n); else apagar(n);
     }
-  }, { root: box, rootMargin: '120% 0px' });
+  }, { root: box, rootMargin: CELULAR() ? '60% 0px' : '120% 0px' });
   for (let n = 1; n <= L.doc.numPages; n++) {
     const [w, h] = L.tamanhos[n - 1];
     const d = el('div', { class: 'pagina', 'data-n': n, style: `width:${Math.round(w * L.escala)}px;height:${Math.round(h * L.escala)}px;background:var(--papel,#fff)` }, el('span', { class: 'num' }, String(n)));
@@ -572,7 +586,7 @@ function mudouPagina(n) {
   if (!l) return;
   if (n !== L.atual) {
     L.atual = n;
-    if (n > L.maxVista) { l.paginasLidas += n - L.maxVista; L.maxVista = n; }
+    if (n > L.maxVista) { contar(l, 'paginasPor', 'paginasLidas', n - L.maxVista); L.maxVista = n; }
   }
   $('#lPagina').value = n; $('#lTotal').textContent = '/ ' + L.doc.numPages;
   if (l.pagina !== n) { l.pagina = n; l.lido = Date.now(); if (n >= L.doc.numPages) l.terminado = true; salvarDepois(l); }
@@ -601,9 +615,12 @@ function fecharLivro(voltar = true) {
   $('#painelTemas').hidden = true; $('#painelNotas').hidden = true;
   if (voltar) {
     $('#leitor').hidden = true; $('#biblioteca').hidden = false;
+    if (APK) APK.leitor(false);
+    $('#leitor').classList.remove('limpo');
     document.title = 'KOFlibrary';
     if (document.fullscreenElement) document.exitFullscreen();
     desenharBiblioteca();
+    if (!APK && enderecoCelular()) setTimeout(() => sincronizarCelular(true), 500);
   }
 }
 
@@ -611,8 +628,8 @@ function fecharLivro(voltar = true) {
 function ajustar(mudanca) {
   const soEste = $('#ajSoEste').checked;
   const a = Object.assign(ajustesDoLivro(), mudanca);
-  if (soEste) { L.livro.leitura = a; salvarLivro(L.livro); }
-  else { if (L.livro) { delete L.livro.leitura; salvarLivro(L.livro); } guardarConfig('leitura', a); }
+  if (soEste) { L.livro.leitura = a; L.livro.editadoEm = Date.now(); salvarLivro(L.livro); }
+  else { if (L.livro && L.livro.leitura) { delete L.livro.leitura; L.livro.editadoEm = Date.now(); salvarLivro(L.livro); } guardarConfig('leitura', a); }
   prepararPintor();
   desenharPainelTemas();
   clearTimeout(ajustar.t); ajustar.t = setTimeout(redesenhar, 90);
@@ -653,6 +670,7 @@ function alternarMarcador() {
   const i = l.marcadores.indexOf(n);
   if (i >= 0) { l.marcadores.splice(i, 1); toast('🔖 Marcador tirado da página ' + n); }
   else { l.marcadores.push(n); l.marcadores.sort((a, b) => a - b); toast('🔖 Página ' + n + ' marcada'); }
+  l.marcadoresEm = Date.now();
   salvarLivro(l); marcarPaginas(); marcarBotoes();
   if (!$('#painelNotas').hidden) desenharNotas();
 }
@@ -684,14 +702,14 @@ function desenharNotas() {
   if (!l.marcadores.length) lm.append(el('div', { class: 'nada' }, 'Nenhum. Aperte 🔖 (ou B) pra marcar a página.'));
   for (const m of l.marcadores) {
     lm.append(el('div', { class: 'item', onclick: () => irPara(m) }, el('span', { class: 'pg' }, 'pág. ' + m),
-      el('button', { class: 'x', title: 'Tirar', onclick: (e) => { e.stopPropagation(); l.marcadores = l.marcadores.filter((x) => x !== m); salvarLivro(l); desenharNotas(); marcarPaginas(); marcarBotoes(); } }, '✕')));
+      el('button', { class: 'x', title: 'Tirar', onclick: (e) => { e.stopPropagation(); l.marcadores = l.marcadores.filter((x) => x !== m); l.marcadoresEm = Date.now(); salvarLivro(l); desenharNotas(); marcarPaginas(); marcarBotoes(); } }, '✕')));
   }
   const ln = $('#listaNotas'); ln.replaceChildren();
   if (!l.notas.length) ln.append(el('div', { class: 'nada' }, 'Nenhuma nota ainda.'));
   for (const nt of l.notas) {
     ln.append(el('div', { class: 'item', onclick: () => irPara(nt.pagina) }, el('span', { class: 'pg' }, 'pág. ' + nt.pagina), nt.texto,
       el('span', { class: 'data' }, quando(nt.data)),
-      el('button', { class: 'x', title: 'Apagar nota', onclick: (e) => { e.stopPropagation(); if (!confirm('Apagar esta nota?')) return; l.notas = l.notas.filter((x) => x !== nt); salvarLivro(l); desenharNotas(); marcarPaginas(); } }, '✕')));
+      el('button', { class: 'x', title: 'Apagar nota', onclick: (e) => { e.stopPropagation(); if (!confirm('Apagar esta nota?')) return; l.notas = l.notas.filter((x) => x !== nt); (l.notasApagadas = l.notasApagadas || []).push(nt.id); salvarLivro(l); desenharNotas(); marcarPaginas(); } }, '✕')));
   }
 }
 function exportarNotas() {
@@ -701,25 +719,35 @@ function exportarNotas() {
   md += `Anotações do KOFlibrary, ${quando(Date.now())}.\n\n`;
   if (l.marcadores.length) md += `## 🔖 Marcadores\n\n` + l.marcadores.map((m) => `- Página ${m}`).join('\n') + '\n\n';
   if (l.notas.length) md += `## 📝 Notas\n\n` + l.notas.map((n) => `### Página ${n.pagina}\n\n${n.texto}\n`).join('\n');
+  if (APK) { APK.salvar(`${l.titulo} - anotações.md`, 'text/markdown', md); return; }
   const a = el('a', { href: URL.createObjectURL(new Blob([md], { type: 'text/markdown' })), download: `${l.titulo} - anotações.md` });
   document.body.append(a); a.click(); a.remove();
 }
 
 // ---------------------------------------------------------------- tempo de leitura
+// cada aparelho conta a sua parte (l.segundosPor[aparelho]); o total é a soma, então a sincronia não perde nada
+function contar(l, porAparelho, total, n) {
+  const m = l[porAparelho] || (l[porAparelho] = {});
+  m[config.aparelho] = (m[config.aparelho] || 0) + n;
+  l[total] = Object.values(m).reduce((a, b) => a + b, 0);
+}
 // conta 1 s quando o leitor está aberto, a janela visível e você mexeu nos últimos 2 min
 setInterval(() => {
   const l = L.livro;
   if (!l || document.hidden || Date.now() - L.ultimaAcao > 120000) return;
-  l.segundos++;
+  contar(l, 'segundosPor', 'segundos', 1);
   if (l.segundos % 15 === 0) salvarDepois(l);
 }, 1000);
 for (const ev of ['keydown', 'wheel', 'pointerdown', 'pointermove', 'touchstart']) addEventListener(ev, () => (L.ultimaAcao = Date.now()), { passive: true });
 
 // ---------------------------------------------------------------- eventos
 function ligarEventos() {
-  $('#btPasta').onclick = escolherPasta;
-  $('#btPasta2').onclick = escolherPasta;
-  $('#btPdf').onclick = () => $('#arquivoPdf').click();
+  $('#btPasta').onclick = APK ? () => APK.pastaEscolher() : escolherPasta;
+  $('#btPasta2').onclick = $('#btPasta').onclick;
+  $('#btPdf').onclick = APK ? () => APK.adicionarPdf() : () => $('#arquivoPdf').click();
+  $('#btCelular').onclick = abrirSincronia;
+  $('#btSincronizar').onclick = async () => { await guardarCelular(); sincronizarCelular(false); };
+  ligarToque();
   $('#arquivoPdf').onchange = (e) => { adicionarArquivos([...e.target.files]); e.target.value = ''; };
   $('#arquivoPasta').onchange = (e) => { adicionarSoNaSessao([...e.target.files].map((f) => ({ file: f, caminho: f.webkitRelativePath }))); e.target.value = ''; };
   $('#btReabrir').onclick = () => reabrirPastas(true);
@@ -803,23 +831,271 @@ function ligarEventos() {
   addEventListener('beforeunload', () => { if (L.livro) salvarLivro(L.livro); });
 }
 
+// ---------------------------------------------------------------- celular (app Android)
+// A pasta de livros do celular e os livros que vieram do PC são listados pelo app (android/Biblioteca.java); a
+// página lê cada PDF por /pasta?u=..., aos pedaços.
+let abrirDepois = null;
+function iniciarCelular() {
+  $('#avisoPasta').hidden = true;
+  $('#vazio p').innerHTML = 'Toque em <b>📁 Escolher pasta</b> e escolha a pasta dos seus livros no celular, ou mande os livros do PC '
+    + 'pelo <b>📱</b> (os dois na mesma Wi-Fi). Também dá pra abrir um PDF de qualquer lugar com <b>Abrir com → KOFlibrary</b>.';
+  $('#btPasta').title = 'Escolher a pasta dos livros no celular';
+  window.__pastaLida = (lista) => {
+    for (const it of lista) {
+      const partes = it.c.split('/');
+      const l = registrar({ name: it.n, size: it.t }, it.c, partes.length > 1 ? partes[0] : (it.r ? (livros.get(it.n + '|' + it.t)?.estante || '') : ''));
+      const url = '/pasta?u=' + encodeURIComponent(it.u);
+      const f = () => fetch(url).then((r) => r.blob());
+      f.url = url;
+      fontes.set(l.id, f);
+    }
+    desenharBiblioteca();
+    fazerCapas();
+    if (abrirDepois && livros.get(abrirDepois)) { const l = livros.get(abrirDepois); abrirDepois = null; abrirLivro(l); }
+  };
+  window.__pastaEscolhida = (ok) => { if (ok) { toast('📁 Lendo a pasta "' + APK.pastaNome() + '"...'); APK.listar(); } };
+  window.__pdfsAdicionados = (n) => { toast(n ? `📚 ${n} PDF${n === 1 ? '' : 's'} adicionado${n === 1 ? '' : 's'}` : 'Nenhum PDF adicionado.'); APK.listar(); };
+  let espera = 0;
+  window.__livroChegou = (nome) => { toast('📥 Chegou do PC: ' + K.Nome.titulo(nome)); clearTimeout(espera); espera = setTimeout(() => APK.listar(), 800); };
+  window.__abrirDeFora = (chave) => { if (!$('#leitor').hidden) fecharLivro(); abrirDepois = chave; APK.listar(); };
+  window.__volume = (d) => { if (L.doc) irPara(L.atual + d, false); };
+  window.__pausou = () => { if (L.livro) salvarLivro(L.livro); };
+  window.__sincronia = (id, json) => {
+    let r = '';
+    try { r = JSON.stringify(receberSincronia(JSON.parse(json))); } catch (e) { console.warn('sincronia', e); }
+    APK.responder(id, r);
+  };
+  // voltar do Android: fecha o que estiver aberto; nada aberto = sai do app
+  window.__voltar = () => {
+    const d = document.querySelector('dialog[open]');
+    if (d) { d.close(); return true; }
+    if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); return true; }
+    if (!$('#leitor').hidden) { fecharLivro(); return true; }
+    if ($('#busca').value) { $('#busca').value = ''; desenharBiblioteca(); return true; }
+    return false;
+  };
+  const p = APK.pronta();
+  if (p) abrirDepois = p;
+  APK.listar();
+}
+function fecharPaineis() {
+  $('#painelTemas').hidden = $('#painelNotas').hidden = true;
+  $('#btTemas').classList.remove('ligado'); $('#btNotas').classList.remove('ligado');
+}
+
+// ---------------------------------------------------------------- toque (celular e tablet)
+// toque no meio mostra/esconde as barras; nas beiradas vira a página; arrastar pro lado vira a página; pinça = zoom
+function ligarToque() {
+  const box = $('#paginas');
+  let ini = null, pinca = null;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  box.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      pinca = { d: dist(e.touches), x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2, f: 1 };
+      ini = null;
+    } else if (e.touches.length === 1 && !pinca) {
+      ini = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), topo: box.scrollTop };
+    }
+  }, { passive: true });
+  box.addEventListener('touchmove', (e) => {
+    if (!pinca || e.touches.length !== 2) return;
+    e.preventDefault();
+    pinca.f = Math.max(0.4, Math.min(4, dist(e.touches) / pinca.d));
+    const r = box.getBoundingClientRect();
+    box.style.transformOrigin = `${pinca.x - r.left}px ${pinca.y - r.top}px`;
+    box.style.transform = `scale(${pinca.f})`;
+  }, { passive: false });
+  box.addEventListener('touchend', (e) => {
+    if (pinca) {
+      if (e.touches.length) return;
+      const f = pinca.f; pinca = null;
+      box.style.transform = ''; box.style.transformOrigin = '';
+      if (Math.abs(f - 1) > 0.05 && L.doc) zoom(L.escala * f);
+      return;
+    }
+    if (!ini || !L.doc) return;
+    const t = e.changedTouches[0], dx = t.clientX - ini.x, dy = t.clientY - ini.y, dt = Date.now() - ini.t;
+    const rolou = Math.abs(box.scrollTop - ini.topo) > 4;
+    ini = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && dt < 700 && box.scrollWidth <= box.clientWidth + 2) {
+      irPara(L.atual + (dx < 0 ? 1 : -1), false);   // arrastou pro lado (só sem zoom maior que a tela, senão é rolar)
+    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 400 && !rolou) {
+      if (!$('#painelTemas').hidden || !$('#painelNotas').hidden) { fecharPaineis(); return; }
+      const x = t.clientX / innerWidth;
+      if (x < 0.25) irPara(L.atual - 1, false);
+      else if (x > 0.75) irPara(L.atual + 1, false);
+      else $('#leitor').classList.toggle('limpo');
+    }
+  });
+}
+
+// ---------------------------------------------------------------- sincronia PC <-> celular
+// O celular (app Android) tem um servidor na rede de casa (android/Sincronia.java, porta 8643, senha de 4 números).
+// O PC manda os registros dele (progresso, notas, marcadores, tempo), o celular junta e devolve os dele, e o PC junta
+// também: os dois ficam iguais. Depois o PC manda os PDFs que o celular ainda não tem. Nada passa pela internet.
+const CAMPOS = ['id', 'arquivo', 'tamanho', 'estante', 'titulo', 'autor', 'ano', 'paginas', 'pagina', 'lido', 'zoom', 'editadoEm',
+  'favorito', 'terminado', 'leitura', 'marcadores', 'marcadoresEm', 'notas', 'notasApagadas', 'segundosPor', 'paginasPor', 'adicionado'];
+function paraEnviar(l) { const r = {}; for (const k of CAMPOS) if (l[k] !== undefined) r[k] = l[k]; return r; }
+function maiores(a = {}, b = {}) { const r = { ...a }; for (const [k, v] of Object.entries(b)) r[k] = Math.max(r[k] || 0, v); return r; }
+const soma = (m) => Object.values(m || {}).reduce((a, b) => a + b, 0);
+// junta o registro de outro aparelho no meu: vale o mais novo de cada parte
+function juntarLivro(meu, dele) {
+  if (!meu) {
+    const r = { ...paraEnviar(dele), caminho: dele.arquivo, noBanco: false, notas: dele.notas || [], marcadores: dele.marcadores || [] };
+    r.segundos = soma(r.segundosPor); r.paginasLidas = soma(r.paginasPor);
+    return r;
+  }
+  if ((dele.lido || 0) > (meu.lido || 0)) {
+    meu.pagina = dele.pagina; meu.lido = dele.lido; meu.zoom = dele.zoom;
+    if (Math.max(dele.lido || 0, dele.editadoEm || 0) > (meu.editadoEm || 0)) meu.terminado = !!dele.terminado;
+  }
+  if (dele.paginas && !meu.paginas) meu.paginas = dele.paginas;
+  if ((dele.editadoEm || 0) > (meu.editadoEm || 0)) {
+    meu.titulo = dele.titulo; meu.autor = dele.autor; meu.favorito = !!dele.favorito; meu.terminado = !!dele.terminado; meu.editadoEm = dele.editadoEm;
+    if (dele.leitura) meu.leitura = dele.leitura; else delete meu.leitura;
+  }
+  if ((dele.marcadoresEm || 0) > (meu.marcadoresEm || 0)) { meu.marcadores = [...(dele.marcadores || [])]; meu.marcadoresEm = dele.marcadoresEm; }
+  const apagadas = new Set([...(meu.notasApagadas || []), ...(dele.notasApagadas || [])]);
+  const notas = new Map();
+  for (const n of [...(meu.notas || []), ...(dele.notas || [])]) if (!apagadas.has(n.id) && !notas.has(n.id)) notas.set(n.id, n);
+  meu.notas = [...notas.values()].sort((a, b) => a.pagina - b.pagina || a.data - b.data);
+  meu.notasApagadas = [...apagadas];
+  meu.segundosPor = maiores(meu.segundosPor, dele.segundosPor); meu.segundos = soma(meu.segundosPor);
+  meu.paginasPor = maiores(meu.paginasPor, dele.paginasPor); meu.paginasLidas = soma(meu.paginasPor);
+  meu.adicionado = Math.min(meu.adicionado || Date.now(), dele.adicionado || Date.now());
+  return meu;
+}
+function juntarTodos(lista) {
+  for (const dele of lista || []) {
+    if (!dele || !dele.id) continue;
+    const r = juntarLivro(livros.get(dele.id), dele);
+    livros.set(r.id, r); normal.delete(r.id); salvarLivro(r);
+  }
+}
+// celular: o PC mandou os registros dele
+function receberSincronia(pedido) {
+  juntarTodos(pedido.livros);
+  if (L.livro) marcarPaginas();
+  if ($('#leitor').hidden) desenharBiblioteca();
+  return { nome: 'celular', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar), temArquivo: [...fontes.keys()] };
+}
+
+// PC: o lado que chama
+const Sinc = { rodando: false, auto: 0, estado: '' };
+function enderecoCelular() {
+  const e = (config.celular?.endereco || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return e && !e.includes(':') ? e + ':8643' : e;
+}
+function statusSinc(txt, tipo = '') {
+  Sinc.estado = txt;
+  const s = $('#sincStatus'); if (s) { s.textContent = txt; s.className = 'sinc-status ' + tipo; }
+  const b = $('#btCelular'); if (b) b.classList.toggle('ligado', tipo === 'ok');
+}
+async function pedir(caminho, opcoes = {}) {
+  const r = await fetch('http://' + enderecoCelular() + caminho, {
+    ...opcoes,
+    headers: { 'X-Kof-Senha': config.celular.senha || '', 'X-Kof-Pc': encodeURIComponent(navigator.platform || 'PC'), ...(opcoes.headers || {}) },
+  });
+  if (r.status === 403) throw new Error('senha');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r;
+}
+async function sincronizarCelular(silencioso) {
+  if (APK || Sinc.rodando) return;
+  if (!enderecoCelular()) { if (!silencioso) abrirSincronia(); return; }
+  Sinc.rodando = true;
+  try {
+    statusSinc('🔄 Juntando progresso e notas...');
+    const r = await pedir('/sincronizar', { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ nome: 'PC', aparelho: config.aparelho, livros: [...livros.values()].map(paraEnviar) }) });
+    const resp = await r.json();
+    juntarTodos(resp.livros);
+    if ($('#leitor').hidden) desenharBiblioteca(); else marcarPaginas();
+    // os PDFs que o celular ainda não tem
+    const tem = new Set(resp.temArquivo || []);
+    const modo = config.celular.enviar || 'lendo';
+    let faltam = [...livros.values()].filter((l) => fontes.has(l.id) && !tem.has(l.id));
+    if (modo === 'lendo') faltam = faltam.filter((l) => situacao(l) === 'lendo' || l.favorito);
+    else if (modo === 'nenhum') faltam = [];
+    faltam.sort((a, b) => (b.lido - a.lido) || (b.adicionado - a.adicionado));
+    let n = 0;
+    for (const l of faltam) {
+      const f = await fontes.get(l.id)();
+      statusSinc(`📤 Enviando ${++n} de ${faltam.length}: ${l.titulo} (${(f.size / 1048576).toFixed(1)} MB)...`);
+      await pedir(`/livro?nome=${encodeURIComponent(l.arquivo)}&estante=${encodeURIComponent(l.estante || '')}&tamanho=${f.size}`, { method: 'PUT', body: f });
+    }
+    await guardarConfig('celular', { ...config.celular, ultima: Date.now() });
+    statusSinc(`✅ Sincronizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` + (n ? ` · ${n} livro${n === 1 ? '' : 's'} enviado${n === 1 ? '' : 's'}` : ''), 'ok');
+    if (!silencioso && n) toast(`📱 ${n} livro${n === 1 ? '' : 's'} enviado${n === 1 ? '' : 's'} pro celular`);
+  } catch (e) {
+    statusSinc(e.message === 'senha' ? '🔒 Senha errada: confira a senha que aparece no celular.' : explicarFalha(), 'erro');
+  } finally { Sinc.rodando = false; }
+}
+function explicarFalha() {
+  const e = enderecoCelular();
+  return `📵 Não achei o celular em ${e}. Confira: o KOFlibrary aberto no celular, os dois na mesma Wi-Fi e o endereço igual ao do celular. `
+    + `Teste abrindo http://${e} no navegador do PC: se aparecer "Celular achado", a rede está ok e é o navegador bloqueando `
+    + `a página de falar com a rede local: clique no cadeado/ícone ao lado do endereço e permita "Dispositivos da rede local", e sincronize de novo.`;
+}
+// o PC sincroniza sozinho a cada 2 minutos enquanto está aberto (e quando fecha um livro)
+function iniciarSincroniaPc() {
+  if (enderecoCelular()) setTimeout(() => sincronizarCelular(true), 3000);
+  Sinc.auto = setInterval(() => { if (enderecoCelular() && !document.hidden) sincronizarCelular(true); }, 120000);
+}
+function abrirSincronia() {
+  const d = $('#dlgCelular');
+  if (APK) {
+    const atualizar = () => {
+      let s = {};
+      try { s = JSON.parse(APK.sincronia()); } catch (e) { /* sem servidor */ }
+      $('#sincCelular').replaceChildren(
+        s.erro ? el('p', {}, '⚠️ ' + s.erro) : el('div', {},
+          el('p', {}, 'No PC, abra o KOFlibrary, clique em 📱 e digite:'),
+          el('div', { class: 'sinc-codigo' }, el('span', {}, 'Endereço'), el('b', {}, `${s.ip}:${s.porta}`)),
+          el('div', { class: 'sinc-codigo' }, el('span', {}, 'Senha'), el('b', {}, s.senha)),
+          s.casa ? null : el('p', { class: 'sinc-status erro' }, '⚠️ Parece que o celular não está numa Wi-Fi de casa (4G ou VPN?). Ligue a Wi-Fi da mesma rede do PC.'),
+          el('p', { class: 'dica' }, s.ultima ? `Última sincronização: ${quando(s.ultima)}` : 'Ainda não sincronizou com o PC.'),
+          el('p', { class: 'dica' }, 'O PC manda os livros e o progresso sozinho enquanto o KOFlibrary estiver aberto nos dois.')));
+    };
+    atualizar();
+    clearInterval(abrirSincronia.t); abrirSincronia.t = setInterval(() => (d.open ? atualizar() : clearInterval(abrirSincronia.t)), 2000);
+    $('#sincPc').hidden = true;
+  } else {
+    $('#sincCelular').replaceChildren();
+    $('#sincPc').hidden = false;
+    const c = config.celular || {};
+    $('#sincEndereco').value = c.endereco || ''; $('#sincSenha').value = c.senha || ''; $('#sincEnviar').value = c.enviar || 'lendo';
+    statusSinc(Sinc.estado || (c.ultima ? `Última sincronização: ${quando(c.ultima)}` : ''), Sinc.estado.startsWith('✅') ? 'ok' : '');
+  }
+  d.showModal();
+}
+async function guardarCelular() {
+  await guardarConfig('celular', { ...(config.celular || {}), endereco: $('#sincEndereco').value.trim(), senha: $('#sincSenha').value.trim(), enviar: $('#sincEnviar').value });
+}
+
 // ---------------------------------------------------------------- início
 async function iniciar() {
   $('#versao').textContent = VERSAO.split(' ')[0];
   ligarEventos();
   try { await Banco.abrir(); } catch (e) { toast('O navegador não deixou guardar dados: ' + e.message, 8000); return; }
-  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem']) config[k] = await Banco.get('config', k);
+  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem', 'aparelho', 'celular']) config[k] = await Banco.get('config', k);
+  if (!config.aparelho) await guardarConfig('aparelho', (APK ? 'cel-' : 'pc-') + Math.random().toString(36).slice(2, 10));
   aplicarTemaApp(config.temaApp);
   if (config.ordem) $('#ordem').value = config.ordem;
   for (const l of await Banco.todos('livros')) {
+    // livros da v1: o tempo e as páginas que já tinham passam a ser deste aparelho
+    if (!l.segundosPor) l.segundosPor = { [config.aparelho]: l.segundos || 0 };
+    if (!l.paginasPor) l.paginasPor = { [config.aparelho]: l.paginasLidas || 0 };
     livros.set(l.id, l);
     if (l.noBanco) fontes.set(l.id, () => Banco.get('arquivos', l.id));
   }
   desenharBiblioteca();
-  if ((config.pastas || []).length) await reabrirPastas(false);
+  if (APK) iniciarCelular();
+  else if ((config.pastas || []).length) await reabrirPastas(false);
   else fazerCapas();
+  if (!APK) iniciarSincroniaPc();
 }
 iniciar();
 
 // pros testes
-window.KOFlibrary = { livros, fontes, L, temas, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro };
+window.KOFlibrary = { livros, fontes, L, temas, config, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };

@@ -12,6 +12,7 @@ Navegador não carrega módulos ES de um arquivo local (file://), então:
 import base64
 import datetime
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -73,7 +74,8 @@ def versao():
         c = subprocess.run(["git", "-C", str(web), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     except OSError:
         c = ""
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M") + (" " + c if c else "")
+    num = os.environ.get("KOFLIBRARY_BUILD") or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M")
+    return num + (" " + c if c else "")
 
 
 pagina = (web / "pagina.html").read_text()

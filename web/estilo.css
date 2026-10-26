@@ -126,3 +126,55 @@ dialog .botoes span { flex: 1; }
   #grade { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 16px 12px; }
   .pagina .num, .pagina .temnota { display: none; }
 }
+
+/* ---------- sincronia ---------- */
+.sinc-codigo { display: flex; justify-content: space-between; align-items: baseline; background: var(--fundo); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+.sinc-codigo span { color: var(--suave); }
+.sinc-codigo b { font-size: 22px; letter-spacing: .04em; color: var(--destaque2); font-variant-numeric: tabular-nums; }
+.sinc-status { font-size: 13.5px; min-height: 1.2em; }
+.sinc-status.ok { color: #9fd49a; }
+.sinc-status.erro { color: #ffb09e; }
+#dlgCelular { width: 560px; }
+#dlgCelular select { display: block; width: 100%; margin-top: 4px; }
+#btCelular.ligado { border-color: #6fbf73; }
+
+/* ---------- celular (app Android, ou tela estreita) ---------- */
+html.celular, html.celular body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+html.celular .rodape { display: none; }
+@media (max-width: 700px) {
+  #biblioteca { padding: 0 12px 20px; }
+  .topo { gap: 8px; padding: 10px 0; }
+  .marca { font-size: 20px; flex: 1; }
+  #busca { order: 9; flex-basis: 100%; }
+  .topo button { padding: 7px 11px; }
+  #btPasta { font-size: 0; } #btPasta::before { content: '📁'; font-size: 16px; }
+  #btPdf { font-size: 0; } #btPdf::before { content: '➕'; font-size: 16px; }
+  #continuar { padding: 12px; }
+  .cont-grande { min-width: 0; gap: 12px; }
+  .cont-grande .capa { width: 84px; }
+  .cont-grande h2 { font-size: 17px; }
+  .cont-mini { display: none; }
+  #grade { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px 10px; }
+  .livro .acoes { opacity: 1; }
+  .soltar { padding: 24px 18px; }
+
+  /* leitor: a barra fica por cima da página e some com um toque no meio */
+  .barra { position: absolute; left: 0; right: 0; top: 0; gap: 6px; padding: 6px 8px; transition: transform .2s; }
+  #btMenos, #btMais, #btCheia { display: none; }   /* zoom no celular é a pinça; o app já é tela cheia */
+  .ltitulo { flex-basis: calc(100% - 64px); font-size: 14px; }
+  #btVoltar { font-size: 0; padding: 5px 12px; } #btVoltar::before { content: '←'; font-size: 18px; }
+  .barra button { padding: 5px 9px; }
+  .barra .grupo { gap: 3px; }
+  #lPagina { width: 44px; }
+  #lTotal { min-width: 0; margin-right: 2px; }
+  #btZoom { font-size: 0; } #btZoom::before { content: '↔'; font-size: 15px; }
+  #paginas { padding: 90px 0 40px; touch-action: pan-x pan-y; }
+  .pagina { margin-bottom: 8px; box-shadow: 0 2px 8px var(--sombra); }
+  #leitor.limpo .barra { transform: translateY(-110%); }
+  #leitor.limpo .linfo { opacity: 0; }
+  .linfo { transition: opacity .2s; bottom: 10px; right: 10px; }
+  /* painéis viram uma gaveta que sobe de baixo */
+  .painel { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-width: none; max-height: 62vh; border-left: none; border-top: 1px solid var(--borda); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 20px var(--sombra); }
+  .temas { grid-template-columns: repeat(4, 1fr); }
+  dialog { min-width: 0; width: calc(100vw - 24px); }
+}
