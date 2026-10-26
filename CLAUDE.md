@@ -50,6 +50,19 @@ Saída: **um html só** (`dist/KOFlibrary.html`, ~2,4 MB) que abre por file:// n
 - Testes: `python3 testes/gerar-mangas.py <pasta>` (precisa do `rar` pro .cbr: apt install rar) + `testes/manga.cjs`;
   `testes/nucleo.cjs` (Kof no Node). Playwright não lê arquivo com acento no caminho pelo setInputFiles: pasta "Mangas".
 
+## v1.x (branch `v1x`, 26/10) — ROADMAP.md tem o plano aprovado v1.x..v9
+- Backup `.koflib` = JSON {formato:'koflibrary-backup', livros: paraEnviar, config}; `restaurarBackup` usa juntarTodos.
+  Automático: `KOFlibrary-backup.koflib` na RAIZ da pasta de livros (PC: handle com readwrite, `config.backupAuto`;
+  APK: SAF com escrita, `Biblioteca.gravarBackup/lerBackup`, ponte backupGravar/backupLer/abrirTexto). A pasta lida =
+  backup juntado em silêncio (pasta sincronizada por Drive/Syncthing junta o progresso entre aparelhos). CASCA 3.
+- "Relatar problema" (`relatorio()`, erros do console/janela num anel de 30).
+- Capas pausam com o leitor aberto; `.cbr` > 150 MB no celular pergunta antes (sem capa).
+- Testes novos: backup.cjs (OPFS como pasta; precisa http, OPFS não existe em file://), grande.cjs (2.000 arquivos:
+  1,3 s pra aparecer, busca 130 ms), escaneado.cjs + gerar-escaneado.py (JPEG 2000; JBIG2 e JPX dos testes do pdf.js:
+  sparse clone de mozilla/pdf.js test/pdfs). jpx_numcomps/jpx_subsampling dão aviso TAMBÉM no pdf.js original.
+- .bat testado no Wine (apt install wine64; curl de mentira .cmd): Wine dá `||` falso depois de `call` e não tem
+  PowerShell nem `where`. Endereço codificado pelo PowerShell ([uri]...AbsoluteUri), senão caminho direto.
+
 ## Como falar com o Marcelo
 Português do Brasil, informal, direto; ele escreve rápido por voz (muitos erros de digitação). Liga pra economia de
 tokens: fazer só o que pediu. Commits em português, sem nome de modelo de IA. Não abrir PR sem ele pedir.

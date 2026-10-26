@@ -20,6 +20,16 @@ Quer que abra numa janela própria, sem barra de endereço? Deixe do lado do htm
 > Seus PDFs não saem do computador. O KOFlibrary guarda no navegador só o que é dele: capas, progresso, notas e temas.
 > A pasta fica lembrada (no Chrome/Edge); se o navegador pedir, é só clicar em **Liberar a pasta**.
 
+## 💾 Backup
+
+Progresso, notas, marcadores e temas ficam guardados no navegador (ou no app do celular). Pra não perder nada:
+- **⚙️ → Backup → Ligar**: o KOFlibrary grava um `KOFlibrary-backup.koflib` **dentro da sua pasta de livros** sempre que
+  algo muda. Limpou o navegador, trocou de PC ou reinstalou o app? Escolha a pasta de novo e tudo volta sozinho.
+  No celular o backup automático já vem ligado (se a pasta tiver sido escolhida de novo depois desta versão).
+- **⬇️ Exportar / ⬆️ Importar backup**: o mesmo arquivo, pra guardar onde quiser. Importar junta com o que já tem
+  (vale o mais novo de cada livro), então importar duas vezes não estraga nada.
+- **🐞 Relatar problema** (em ⚙️): junta versão, aparelho e os últimos erros num texto pra copiar e mandar.
+
 ## 🗾 Mangá e HQ
 
 Além de PDF, o KOFlibrary lê **mangá e HQ em `.cbz` e `.cbr`**. É só deixar na mesma pasta dos livros (uma subpasta por

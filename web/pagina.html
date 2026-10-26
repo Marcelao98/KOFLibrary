@@ -128,8 +128,24 @@
 <dialog id="dlgAjustes">
   <h3>⚙️ Tema do aplicativo</h3>
   <div id="listaApp"></div>
+  <h3>💾 Backup</h3>
+  <p class="dica">Progresso, notas, marcadores e temas (os PDFs e mangás não vão: eles já estão na sua pasta).</p>
+  <div id="backupEstado" class="backup-estado"></div>
+  <div class="botoes-linha">
+    <button id="btExportarBackup">⬇️ Exportar backup</button>
+    <button id="btImportarBackup">⬆️ Importar backup</button>
+  </div>
+  <h3>🐞 Algo deu errado?</h3>
+  <button id="btRelatar">Relatar problema</button>
   <p class="dica">Atalhos no leitor: ← → páginas · + − zoom · 0 ajustar · T temas · B marcador · N notas · F tela cheia · Esc voltar</p>
   <button value="ok" onclick="this.closest('dialog').close()">Fechar</button>
+</dialog>
+
+<dialog id="dlgRelatorio">
+  <h3>🐞 Relatar problema</h3>
+  <p class="dica">Escreva o que aconteceu na primeira linha, copie e mande pro Marcelo. Vai junto a versão, o aparelho e os últimos erros (nada dos seus arquivos além do nome dos que não abriram).</p>
+  <textarea id="txtRelatorio" rows="12"></textarea>
+  <div class="botoes"><button id="btCopiarRelatorio" class="principal">📋 Copiar</button><span></span><button onclick="this.closest('dialog').close()">Fechar</button></div>
 </dialog>
 
 <dialog id="dlgCelular">
@@ -172,6 +188,7 @@
 <div id="toast" hidden></div>
 <input id="arquivoPdf" type="file" accept=".pdf,.cbz,.cbr,application/pdf" multiple hidden>
 <input id="arquivoPasta" type="file" webkitdirectory multiple hidden>
+<input id="arquivoBackup" type="file" accept=".koflib,.json,application/json" hidden>
 
 <script>
 /*{{KOF}}*/

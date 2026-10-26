@@ -5,8 +5,11 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 set "BASE=https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/publicado"
 if exist "nao-atualizar" goto abrir
-where curl >nul 2>&1 || goto abrir
-curl -fsSL --connect-timeout 8 --max-time 15 -o ".versao.novo" "%BASE%/versao.txt" 2>nul || goto abrir
+rem sem curl (Windows antigo) a chamada falha e ele so abre
+del ".versao.novo" 2>nul
+call curl -fsSL --connect-timeout 8 --max-time 15 -o ".versao.novo" "%BASE%/versao.txt" 2>nul
+rem confere o arquivo (e nao o codigo de saida): sem curl ou sem internet, ele nao existe
+if not exist ".versao.novo" goto abrir
 set "NOVA=0" & set "ATUAL=0" & set "TAM="
 for /f "tokens=2 delims==" %%v in ('findstr /b "versao=" ".versao.novo"') do set "NOVA=%%v"
 if exist "versao.txt" for /f "tokens=2 delims==" %%v in ('findstr /b "versao=" "versao.txt"') do set "ATUAL=%%v"
@@ -14,7 +17,7 @@ for /f "tokens=2 delims=:" %%v in ('findstr /b "html=" ".versao.novo"') do set "
 rem os numeros (AAAAMMDDHHMM) tem o mesmo tamanho: comparar como texto da certo
 if "!NOVA!" GTR "!ATUAL!" (
     echo Baixando o KOFlibrary novo ^(!NOVA!^)...
-    curl -fsSL --connect-timeout 8 --max-time 120 -o ".KOFlibrary.html.novo" "%BASE%/KOFlibrary.html" 2>nul
+    call curl -fsSL --connect-timeout 8 --max-time 120 -o ".KOFlibrary.html.novo" "%BASE%/KOFlibrary.html" 2>nul
     for %%f in (".KOFlibrary.html.novo") do if "%%~zf"=="!TAM!" (
         move /y ".KOFlibrary.html.novo" "KOFlibrary.html" >nul
         copy /y ".versao.novo" "versao.txt" >nul
@@ -23,8 +26,10 @@ if "!NOVA!" GTR "!ATUAL!" (
 )
 del ".versao.novo" ".KOFlibrary.html.novo" 2>nul
 :abrir
-set "PAGINA=%cd:\=/%/KOFlibrary.html"
-rem espaco no caminho vira %%20 (com espaço cru o Edge abre aba vazia)
-set "PAGINA=!PAGINA: =%%20!"
-start "" msedge --app="file:///%PAGINA%"
+rem o endereco vai codificado (espaco vira %%20, acento tambem): o PowerShell do Windows monta;
+rem sem ele, vai o caminho direto
+set "PAGINA="
+for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "([uri]'%cd%\KOFlibrary.html').AbsoluteUri" 2^>nul`) do set "PAGINA=%%u"
+if not defined PAGINA set "PAGINA=file:///%cd:\=/%/KOFlibrary.html"
+start "" msedge --app="%PAGINA%"
 if errorlevel 1 start "" "KOFlibrary.html"

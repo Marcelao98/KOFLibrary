@@ -46,9 +46,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
-    private static final int PEDIDO_PASTA = 1, PEDIDO_PDF = 2, PEDIDO_SALVAR = 3;
+    private static final int PEDIDO_PASTA = 1, PEDIDO_PDF = 2, PEDIDO_SALVAR = 3, PEDIDO_TEXTO = 4;
     // sobe a cada mudança neste Java: página publicada com casca maior pede APK novo (ela pode usar algo que esta não tem)
-    static final int CASCA = 2;
+    static final int CASCA = 3;
     private static final String FONTE = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/publicado/";
     private static final String APK = "https://raw.githubusercontent.com/Marcelao98/KOFLibrary/main/android/apk/KOFlibrary.apk";
 
@@ -220,7 +220,9 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void pastaEscolher() {
             runOnUiThread(new Runnable() { public void run() {
-                try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PEDIDO_PASTA); }
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                try { startActivityForResult(i, PEDIDO_PASTA); }
                 catch (ActivityNotFoundException e) { Toast.makeText(MainActivity.this, "esse Android não deixa escolher pasta", Toast.LENGTH_LONG).show(); }
             } });
         }
@@ -291,6 +293,25 @@ public class MainActivity extends Activity {
             } });
         }
 
+        /** Backup automático dentro da pasta de livros (Biblioteca). */
+        @JavascriptInterface
+        public boolean backupGravar(String texto) { return biblioteca.gravarBackup(texto); }
+
+        @JavascriptInterface
+        public String backupLer() { return biblioteca.lerBackup(); }
+
+        /** Escolher um arquivo de texto (o backup .koflib pra importar): chega em window.__textoAberto(texto). */
+        @JavascriptInterface
+        public void abrirTexto() {
+            runOnUiThread(new Runnable() { public void run() {
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("*/*");
+                try { startActivityForResult(i, PEDIDO_TEXTO); }
+                catch (ActivityNotFoundException e) { Toast.makeText(MainActivity.this, "não achei o seletor de arquivos", Toast.LENGTH_LONG).show(); }
+            } });
+        }
+
         @JavascriptInterface
         public void sair() { runOnUiThread(new Runnable() { public void run() { finish(); } }); }
     }
@@ -312,6 +333,18 @@ public class MainActivity extends Activity {
                 int n = 0;
                 for (Uri u : us) if (biblioteca.copiarDeFora(u) != null) n++;
                 js("window.__pdfsAdicionados && window.__pdfsAdicionados(" + n + ")");
+            } }).start();
+        } else if (pedido == PEDIDO_TEXTO && resultado == RESULT_OK && dados != null && dados.getData() != null) {
+            final Uri u = dados.getData();
+            new Thread(new Runnable() { public void run() {
+                String t = "";
+                try {
+                    InputStream in = getContentResolver().openInputStream(u);
+                    java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                    try { byte[] b = new byte[1 << 16]; for (int n; (n = in.read(b)) > 0; ) o.write(b, 0, n); } finally { in.close(); }
+                    t = o.toString("UTF-8");
+                } catch (Exception e) { /* não leu */ }
+                js("window.__textoAberto && window.__textoAberto(" + JSONObject.quote(t) + ")");
             } }).start();
         } else if (pedido == PEDIDO_SALVAR) {
             if (resultado == RESULT_OK && dados != null && dados.getData() != null && paraSalvar != null) {

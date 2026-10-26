@@ -103,7 +103,7 @@ function toast(msg, ms = 2800) {
 }
 const idDe = (f) => f.name + '|' + f.size;
 const EXT_LIVRO = /\.(pdf|cbz|cbr)$/i;   // PDF, mangá/HQ em zip (.cbz) e em RAR (.cbr)
-function salvarLivro(l) { return Banco.put('livros', l); }
+function salvarLivro(l) { if (typeof marcarBackup === 'function') marcarBackup(); return Banco.put('livros', l); }
 const salvarDepois = (() => { const fila = new Set(); let t = 0; return (l) => { fila.add(l); clearTimeout(t); t = setTimeout(() => { for (const x of fila) salvarLivro(x); fila.clear(); }, 600); }; })();
 
 function registrar(file, caminho, estanteNome) {
@@ -137,6 +137,8 @@ async function lerPasta(dir, prefixo = '', estanteNome = '', achados = []) {
     if (h.kind === 'directory') {
       if (nome.startsWith('.')) continue;
       await lerPasta(h, prefixo + nome + '/', estanteNome || nome, achados);
+    } else if (nome === BACKUP_NOME && !prefixo) {
+      try { await restaurarBackup(await (await h.getFile()).text(), true); } catch (e) { /* backup estragado: ignora */ }
     } else if (EXT_LIVRO.test(nome)) {
       try {
         const f = await h.getFile();
@@ -252,6 +254,8 @@ async function fazerCapas() {
   try {
     const faltam = [...livros.values()].filter((l) => fontes.has(l.id) && (!l.temCapa || !l.paginas));
     for (const l of faltam) {
+      // lendo: as capas esperam (no celular a memória e o processador ficam pro livro)
+      while (!$('#leitor').hidden) await new Promise((r) => setTimeout(r, 1500));
       try {
         const doc = await abrirDocumento(l);
         l.paginas = doc.numPages;
@@ -490,7 +494,7 @@ async function abrirLivro(l) {
   const ativo = ++L.ativo;
   let doc;
   try {
-    doc = await abrirDocumento(l);
+    doc = await abrirDocumento(l, true);
   } catch (e) {
     box.replaceChildren(el('p', { class: 'nada', style: 'text-align:center' }, 'Não deu pra abrir esse arquivo: ' + (e.message || e)));
     return;
@@ -647,6 +651,7 @@ function fecharLivro(voltar = true) {
     if (document.fullscreenElement) document.exitFullscreen();
     desenharBiblioteca();
     if (!APK && enderecoCelular()) setTimeout(() => sincronizarCelular(true), 500);
+    setTimeout(() => gravarBackupAuto(), 800);
   }
 }
 
@@ -780,7 +785,12 @@ function ligarEventos() {
   $('#arquivoPdf').onchange = (e) => { adicionarArquivos([...e.target.files]); e.target.value = ''; };
   $('#arquivoPasta').onchange = (e) => { adicionarSoNaSessao([...e.target.files].map((f) => ({ file: f, caminho: f.webkitRelativePath }))); e.target.value = ''; };
   $('#btReabrir').onclick = () => reabrirPastas(true);
-  $('#btAjustes').onclick = () => { desenharAjustes(); $('#dlgAjustes').showModal(); };
+  $('#btAjustes').onclick = () => { desenharAjustes(); desenharBackup(); $('#dlgAjustes').showModal(); };
+  $('#btExportarBackup').onclick = exportarBackup;
+  $('#btImportarBackup').onclick = importarBackup;
+  $('#arquivoBackup').onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restaurarBackup(await f.text()); };
+  $('#btRelatar').onclick = abrirRelatorio;
+  $('#btCopiarRelatorio').onclick = copiarRelatorio;
   $('#busca').oninput = () => { limiteGrade = 240; desenharBiblioteca(); };
   $('#ordem').onchange = async () => { await guardarConfig('ordem', $('#ordem').value); desenharBiblioteca(); };
 
@@ -948,10 +958,12 @@ function cartaoSerie(g) {
 }
 
 // ---- abrir os arquivos
-async function abrirDocumento(l) {
+async function abrirDocumento(l, paraLer) {
   const fonte = fontes.get(l.id);
-  return ehQuadrinho(l) ? abrirQuadrinho(fonte, l) : abrirPdf(fonte);
+  return ehQuadrinho(l) ? abrirQuadrinho(fonte, l, paraLer) : abrirPdf(fonte);
 }
+// o .cbr (RAR) é aberto inteiro na memória: no celular, arquivo muito grande pode derrubar o app
+const RAR_GRANDE = 150 * 1048576;
 // bytes [ini, fim) da fonte: no celular um pedido com Range; no PC um pedaço do arquivo
 async function pedaco(fonte, arquivo, ini, fim) {
   if (fonte.url) {
@@ -1027,7 +1039,13 @@ function medirBordas(bmp) {
   const fx = bmp.width / w, fy = bmp.height / h;
   return [Math.floor(x0 * fx), Math.floor(y0 * fy), Math.ceil((x1 - x0) * fx), Math.ceil((y1 - y0) * fy)];
 }
-async function abrirQuadrinho(fonte, l) {
+async function abrirQuadrinho(fonte, l, paraLer) {
+  if (tipoDe(l.arquivo) === 'cbr' && APK && l.tamanho > RAR_GRANDE) {
+    const mb = Math.round(l.tamanho / 1048576);
+    if (!paraLer) throw new Error(`.cbr de ${mb} MB: grande demais pra fazer a capa no celular`);
+    if (!confirm(`Esse .cbr tem ${mb} MB. No celular, o RAR é aberto inteiro na memória e pode fechar o app.\n\n`
+      + 'Dica: o mesmo mangá em .cbz abre leve (só a página da tela). Tentar abrir mesmo assim?')) throw new Error('não abri: .cbr grande demais pro celular');
+  }
   const pags = tipoDe(l.arquivo) === 'cbr' ? await paginasDoRar(fonte) : await paginasDoZip(fonte, l.tamanho);
   if (!pags.nomes.length) throw new Error('não achei nenhuma imagem dentro do arquivo');
   const cache = new Map(), uso = [];
@@ -1157,6 +1175,124 @@ async function mudarManga(m) {
   desenharPainelTemas();
 }
 
+// ---------------------------------------------------------------- backup (.koflib) e relatar problema
+// Progresso, notas, marcadores e ajustes moram no banco do navegador: se ele for limpo, some tudo. O backup é um
+// JSON com os registros (sem os PDFs), no mesmo formato da sincronia. Importar junta com o que já tem (o mais novo
+// ganha), então importar duas vezes não estraga nada. O backup automático fica DENTRO da pasta de livros
+// (KOFlibrary-backup.koflib): reinstalou o app ou limpou o navegador, é só escolher a pasta que tudo volta. Como
+// juntar é seguro, o backup da pasta é sempre lido quando a pasta é lida (pasta sincronizada por Drive/Syncthing
+// entre aparelhos também junta o progresso).
+const BACKUP_NOME = 'KOFlibrary-backup.koflib';
+function montarBackup() {
+  return JSON.stringify({
+    formato: 'koflibrary-backup', versao: 1, criado: Date.now(), aparelho: config.aparelho, app: VERSAO,
+    livros: [...livros.values()].map(paraEnviar),
+    config: { temaApp: config.temaApp, leitura: config.leitura, manga: config.manga, ordem: config.ordem },
+  });
+}
+async function restaurarBackup(texto, silencioso) {
+  let b;
+  try { b = JSON.parse(texto); } catch (e) { b = null; }
+  if (!b || b.formato !== 'koflibrary-backup' || !Array.isArray(b.livros)) {
+    if (!silencioso) toast('Esse arquivo não é um backup do KOFlibrary.');
+    return false;
+  }
+  if (silencioso && b.aparelho === config.aparelho && (b.criado || 0) <= (config.backupFeito || 0)) return true;   // o meu mesmo
+  juntarTodos(b.livros);
+  for (const k of ['temaApp', 'leitura', 'manga', 'ordem']) {
+    if (b.config && b.config[k] !== undefined && config[k] === undefined) await guardarConfig(k, b.config[k]);
+  }
+  aplicarTemaApp(config.temaApp);
+  if ($('#leitor').hidden) desenharBiblioteca();
+  fazerCapas();
+  if (!silencioso) toast(`💾 Backup de ${quando(b.criado)} restaurado: ${b.livros.length} livros, com progresso e notas.`, 5000);
+  return true;
+}
+function exportarBackup() {
+  const txt = montarBackup(), nome = `KOFlibrary-backup-${new Date().toISOString().slice(0, 10)}.koflib`;
+  if (APK) { APK.salvar(nome, 'application/json', txt); return; }
+  const a = el('a', { href: URL.createObjectURL(new Blob([txt], { type: 'application/json' })), download: nome });
+  document.body.append(a); a.click(); a.remove();
+}
+function importarBackup() {
+  if (APK) { APK.abrirTexto(); return; }
+  $('#arquivoBackup').click();
+}
+// automático: grava na pasta de livros quando algo muda (no máximo a cada 2 min) e ao fechar um livro
+let backupSujo = false, backupT = 0;
+function marcarBackup() { backupSujo = true; clearTimeout(backupT); backupT = setTimeout(gravarBackupAuto, 120000); }
+async function gravarBackupAuto(forcar) {
+  if (!backupSujo && !forcar) return;
+  if (!livros.size) return;
+  const txt = montarBackup();
+  let ok = false;
+  try {
+    if (APK) ok = APK.backupGravar(txt);
+    else {
+      const p = (config.pastas || [])[0];
+      if (p && config.backupAuto && (await p.queryPermission({ mode: 'readwrite' })) === 'granted') {
+        const w = await (await p.getFileHandle(BACKUP_NOME, { create: true })).createWritable();
+        await w.write(txt); await w.close();
+        ok = true;
+      }
+    }
+  } catch (e) { console.warn('backup automático', e); }
+  if (ok) { backupSujo = false; await guardarConfig('backupFeito', Date.now()); }
+  desenharBackup();
+  return ok;
+}
+async function ligarBackupAuto() {
+  if (APK) {   // no celular precisa da pasta com permissão de escrita (escolher de novo libera)
+    if (!(await gravarBackupAuto(true))) { toast('Escolha a pasta dos livros de novo (📁) pra liberar o backup nela.', 5000); APK.pastaEscolher(); }
+    return;
+  }
+  const p = (config.pastas || [])[0];
+  if (!p) { toast('Escolha a pasta dos livros (📁) primeiro: o backup fica dentro dela.', 4500); return; }
+  if ((await p.requestPermission({ mode: 'readwrite' })) !== 'granted') { toast('Sem permissão de gravar na pasta: o backup automático fica desligado.'); return; }
+  await guardarConfig('backupAuto', true);
+  await gravarBackupAuto(true);
+  toast(`💾 Backup automático ligado: fica em "${p.name}/${BACKUP_NOME}".`, 4500);
+}
+async function desligarBackupAuto() { await guardarConfig('backupAuto', false); desenharBackup(); }
+function desenharBackup() {
+  const box = $('#backupEstado'); if (!box) return;
+  const ligado = APK ? !!APK.pastaNome() : config.backupAuto && (config.pastas || []).length;
+  const pasta = APK ? APK.pastaNome() : (config.pastas || [])[0]?.name;
+  box.replaceChildren(
+    el('div', {}, ligado ? `✅ Automático na pasta "${pasta}"` + (config.backupFeito ? ` · último: ${quando(config.backupFeito)}` : '') : '⚪ Backup automático desligado'),
+    APK ? null : ligado ? el('button', { onclick: desligarBackupAuto }, 'Desligar') : el('button', { onclick: ligarBackupAuto }, 'Ligar (grava na pasta dos livros)'));
+}
+
+// "Relatar problema": versão, aparelho e os últimos erros num texto pra mandar pro Marcelo
+const ultimosErros = [];
+function anotarErro(msg) { ultimosErros.push(new Date().toLocaleTimeString('pt-BR') + ' ' + String(msg).slice(0, 400)); if (ultimosErros.length > 30) ultimosErros.shift(); }
+addEventListener('error', (e) => anotarErro((e.message || '') + (e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '')));
+addEventListener('unhandledrejection', (e) => anotarErro('promessa: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)));
+{ const ce = console.error, cw = console.warn; console.error = (...a) => { anotarErro(a.join(' ')); ce(...a); }; console.warn = (...a) => { anotarErro('aviso: ' + a.join(' ')); cw(...a); }; }
+function relatorio() {
+  const tipos = {};
+  for (const l of livros.values()) { const t = tipoDe(l.arquivo); tipos[t] = (tipos[t] || 0) + 1; }
+  const comErro = [...livros.values()].filter((l) => l.erro).slice(0, 10).map((l) => `  ${l.arquivo}: ${l.erro}`);
+  return [
+    `KOFlibrary ${VERSAO}` + (APK ? ` · app Android ${APK.versao()} (casca ${APK.casca ? APK.casca() : '?'})` : ''),
+    `Aparelho: ${navigator.userAgent}`,
+    `Tela: ${innerWidth}x${innerHeight} @${devicePixelRatio}x`,
+    `Biblioteca: ${livros.size} itens ${JSON.stringify(tipos)} · lendo agora: ${L.livro ? L.livro.arquivo + ' pág. ' + L.atual : 'nada'}`,
+    `Mangá: ${JSON.stringify(modoManga())} · tema: ${JSON.stringify(ajustesDoLivro())}`,
+    comErro.length ? 'Arquivos que não abriram:\n' + comErro.join('\n') : 'Arquivos que não abriram: nenhum',
+    'Últimos erros:', ...(ultimosErros.length ? ultimosErros.map((x) => '  ' + x) : ['  nenhum']),
+  ].join('\n');
+}
+function abrirRelatorio() {
+  $('#txtRelatorio').value = 'O que aconteceu: \n\n----\n' + relatorio();
+  $('#dlgRelatorio').showModal();
+}
+async function copiarRelatorio() {
+  const t = $('#txtRelatorio');
+  try { await navigator.clipboard.writeText(t.value); toast('📋 Copiado: cola no WhatsApp/e-mail pro Marcelo.'); }
+  catch (e) { t.select(); document.execCommand('copy'); toast('📋 Copiado.'); }
+}
+
 // ---------------------------------------------------------------- celular (app Android)
 // A pasta de livros do celular e os livros que vieram do PC são listados pelo app (android/Biblioteca.java); a
 // página lê cada PDF por /pasta?u=..., aos pedaços.
@@ -1175,6 +1311,7 @@ function iniciarCelular() {
       f.url = url;
       fontes.set(l.id, f);
     }
+    try { const b = APK.backupLer && APK.backupLer(); if (b) restaurarBackup(b, true); } catch (e) { /* sem backup */ }
     desenharBiblioteca();
     fazerCapas();
     if (abrirDepois && livros.get(abrirDepois)) { const l = livros.get(abrirDepois); abrirDepois = null; abrirLivro(l); }
@@ -1185,7 +1322,8 @@ function iniciarCelular() {
   window.__livroChegou = (nome) => { toast('📥 Chegou do PC: ' + K.Nome.titulo(nome)); clearTimeout(espera); espera = setTimeout(() => APK.listar(), 800); };
   window.__abrirDeFora = (chave) => { if (!$('#leitor').hidden) fecharLivro(); abrirDepois = chave; APK.listar(); };
   window.__volume = (d) => { if (L.doc) passo(d); };
-  window.__pausou = () => { if (L.livro) salvarLivro(L.livro); };
+  window.__pausou = () => { if (L.livro) salvarLivro(L.livro); gravarBackupAuto(); };
+  window.__textoAberto = (t) => { if (t) restaurarBackup(t); };
   window.__sincronia = (id, json) => {
     let r = '';
     try { r = JSON.stringify(receberSincronia(JSON.parse(json))); } catch (e) { console.warn('sincronia', e); }
@@ -1407,7 +1545,7 @@ async function iniciar() {
   $('#versao').textContent = VERSAO.split(' ')[0];
   ligarEventos();
   try { await Banco.abrir(); } catch (e) { toast('O navegador não deixou guardar dados: ' + e.message, 8000); return; }
-  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem', 'aparelho', 'celular']) config[k] = await Banco.get('config', k);
+  for (const k of ['pastas', 'temaApp', 'leitura', 'ordem', 'aparelho', 'celular', 'manga', 'backupAuto', 'backupFeito']) config[k] = await Banco.get('config', k);
   if (!config.aparelho) await guardarConfig('aparelho', (APK ? 'cel-' : 'pc-') + Math.random().toString(36).slice(2, 10));
   aplicarTemaApp(config.temaApp);
   if (config.ordem) $('#ordem').value = config.ordem;
@@ -1427,4 +1565,4 @@ async function iniciar() {
 iniciar();
 
 // pros testes
-window.KOFlibrary = { livros, fontes, L, temas, config, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };
+window.KOFlibrary = { livros, fontes, L, temas, config, montarBackup, restaurarBackup, gravarBackupAuto, relatorio, adicionarPasta, ligarBackupAuto, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };

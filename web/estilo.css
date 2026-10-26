@@ -205,3 +205,11 @@ html.celular .rodape { display: none; }
   #paginas.paginado { padding: 0; }
   #btPdf::before { content: '➕'; }
 }
+
+/* ---------- backup e relatório ---------- */
+.backup-estado { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--fundo); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; margin-bottom: 8px; }
+.botoes-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+#dlgAjustes h3 { margin: 16px 0 6px; }
+#dlgAjustes h3:first-child { margin-top: 0; }
+#txtRelatorio { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+#dlgRelatorio { width: 640px; }

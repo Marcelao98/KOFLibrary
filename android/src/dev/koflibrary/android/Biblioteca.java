@@ -80,10 +80,14 @@ final class Biblioteca {
 
     /** Guarda a pasta que voltou do seletor (ACTION_OPEN_DOCUMENT_TREE): vale também nas próximas aberturas do app. */
     void guardar(Uri t) {
-        a.getContentResolver().takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        // leitura sempre; escrita quando o Android deixa (o backup automático grava dentro da pasta)
+        try { a.getContentResolver().takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); }
+        catch (SecurityException e) { a.getContentResolver().takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
         Uri antiga = arvore();
         if (antiga != null && !antiga.equals(t)) {
-            try { a.getContentResolver().releasePersistableUriPermission(antiga, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception e) { /* já não tinha */ }
+            try { a.getContentResolver().releasePersistableUriPermission(antiga, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception e) {
+                try { a.getContentResolver().releasePersistableUriPermission(antiga, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception x) { /* já não tinha */ }
+            }
         }
         prefs.edit().putString("arvore", t.toString()).apply();
     }
@@ -145,6 +149,49 @@ final class Biblioteca {
             if (f.isDirectory()) varrerArquivos(f, caminho + f.getName() + "/", l);
             else if (ehLivro(f.getName())) l.add(new Item(f.getName(), Uri.fromFile(f), f.length(), caminho + f.getName()));
         }
+    }
+
+    // ---- backup automático (KOFlibrary-backup.koflib na raiz da pasta de livros) ----
+    static final String BACKUP = "KOFlibrary-backup.koflib";
+
+    private Uri backupNaPasta(boolean criar) throws Exception {
+        Uri t = arvore();
+        if (t == null || !temPermissao(t)) return null;
+        String raiz = DocumentsContract.getTreeDocumentId(t);
+        Cursor c = null;
+        try {
+            c = a.getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(t, raiz),
+                    new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null);
+            while (c != null && c.moveToNext()) if (BACKUP.equals(c.getString(1))) return DocumentsContract.buildDocumentUriUsingTree(t, c.getString(0));
+        } finally { if (c != null) c.close(); }
+        if (!criar) return null;
+        return DocumentsContract.createDocument(a.getContentResolver(), DocumentsContract.buildDocumentUriUsingTree(t, raiz), "application/octet-stream", BACKUP);
+    }
+
+    /** Grava o backup na pasta; false = sem pasta ou sem permissão de escrita (escolher a pasta de novo libera). */
+    boolean gravarBackup(String texto) {
+        try {
+            Uri u = backupNaPasta(true);
+            if (u == null) return false;
+            java.io.OutputStream o = a.getContentResolver().openOutputStream(u, "wt");
+            try { o.write(texto.getBytes("UTF-8")); } finally { o.close(); }
+            return true;
+        } catch (Exception e) {
+            android.util.Log.d("KOFlibrary", "backup não gravou: " + e);
+            return false;
+        }
+    }
+
+    /** O backup que está na pasta ("" = não tem). */
+    String lerBackup() {
+        try {
+            Uri u = backupNaPasta(false);
+            if (u == null) return "";
+            InputStream in = a.getContentResolver().openInputStream(u);
+            java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+            try { byte[] b = new byte[1 << 16]; for (int n; (n = in.read(b)) > 0; ) o.write(b, 0, n); } finally { in.close(); }
+            return o.toString("UTF-8");
+        } catch (Exception e) { return ""; }
     }
 
     /** Copia um arquivo de fora (Abrir com, Compartilhar, ➕) pra recebidos/. Devolve o arquivo (null = não deu). */
