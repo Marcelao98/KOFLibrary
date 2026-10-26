@@ -1,0 +1,210 @@
+package nucleo
+
+// Acha os quadros de uma página de mangá/HQ pra leitura quadro a quadro. Recebe a página
+// pequena (um byte de brilho por ponto) e corta nas "calhas": as faixas da cor do fundo que
+// atravessam o pedaço de lado a lado. Primeiro corta em fileiras (horizontal), depois cada
+// fileira em colunas (vertical), e repete dentro de cada pedaço (o "XY-cut"). Calha inclinada
+// ou desenho que vaza por cima da calha não é cortado: os quadros juntos viram um só (a
+// leitura continua, só com um quadro maior). Ordem japonesa: fileiras de cima pra baixo,
+// colunas da direita pra esquerda (rtl), ou da esquerda pra direita.
+class Quadros {
+    Int[] lum
+    Int w
+    Int h
+    Int fundo
+    Bool rtl
+    Int[] saida
+    Int total
+
+    public constructor(Int[] lum, Int w, Int h, Bool rtl) {
+        this.lum = lum
+        this.w = w
+        this.h = h
+        this.rtl = rtl
+        this.saida = new Int[4 * 40]
+        this.total = 0
+        this.fundo = fundoDaPagina()
+    }
+
+    // [n, x0, y0, x1, y1, ...] na escala da página pequena (x1/y1 exclusivos); n = 1 quando não achou quadros
+    public Int[] achar() {
+        cortar(0, 0, this.w, this.h, true, 0)
+        juntarPequenos()
+        if (this.total < 2) {
+            this.total = 0
+            guardar(0, 0, this.w, this.h)
+        }
+        var r = new Int[1 + 4 * this.total]
+        r[0] = this.total
+        var i = 0
+        while (i < 4 * this.total) {
+            r[1 + i] = this.saida[i]
+            i++
+        }
+        return r
+    }
+
+    // a cor do fundo: a mais comum na borda da página (branco no mangá comum, preto nas páginas escuras)
+    Int fundoDaPagina() {
+        var claros = 0
+        var escuros = 0
+        var x = 0
+        while (x < this.w) {
+            if (this.lum[x] > 128) { claros++ } else { escuros++ }
+            if (this.lum[(this.h - 1) * this.w + x] > 128) { claros++ } else { escuros++ }
+            x++
+        }
+        if (escuros > claros * 2) { return 0 }
+        return 255
+    }
+
+    Bool tinta(Int x, Int y) {
+        var d = this.lum[y * this.w + x] - this.fundo
+        // cinza claro do desenho (retícula, céu) também é tinta: só o fundo puro é calha
+        return d > 32 || d < -32
+    }
+
+    // quantos pontos de tinta na linha y entre x0 e x1
+    Int tintaLinha(Int y, Int x0, Int x1) {
+        var n = 0
+        var x = x0
+        while (x < x1) {
+            if (tinta(x, y)) { n++ }
+            x++
+        }
+        return n
+    }
+
+    Int tintaColuna(Int x, Int y0, Int y1) {
+        var n = 0
+        var y = y0
+        while (y < y1) {
+            if (tinta(x, y)) { n++ }
+            y++
+        }
+        return n
+    }
+
+    // linha "vazia" = quase nada de tinta: até 2 pontos ou 0,7% (o rabinho de um balão cruzando a calha e
+    // sujeira de scan passam; uma linha DENTRO de um quadro não passa, porque cruza as duas bordas dele)
+    Bool linhaVazia(Int y, Int x0, Int x1) { return tintaLinha(y, x0, x1) <= folga(x1 - x0) }
+    Bool colunaVazia(Int x, Int y0, Int y1) { return tintaColuna(x, y0, y1) <= folga(y1 - y0) }
+    Int folga(Int n) {
+        var f = n / 150
+        if (f < 2) { return 2 }
+        return f
+    }
+
+    Void cortar(Int x0, Int y0, Int x1, Int y1, Bool horizontal, Int prof) {
+        // aperta o pedaço até a tinta (tira as bordas vazias)
+        var a = x0
+        var b = x1
+        var c = y0
+        var d = y1
+        while (c < d && linhaVazia(c, a, b)) { c++ }
+        while (d > c && linhaVazia(d - 1, a, b)) { d-- }
+        while (a < b && colunaVazia(a, c, d)) { a++ }
+        while (b > a && colunaVazia(b - 1, c, d)) { b-- }
+        if (b - a < 4 || d - c < 4) { return }
+        if (prof > 6) {
+            guardar(a, c, b, d)
+            return
+        }
+        if (dividir(a, c, b, d, horizontal, prof)) { return }
+        if (dividir(a, c, b, d, !horizontal, prof)) { return }
+        guardar(a, c, b, d)
+    }
+
+    // procura calhas numa direção; achou: corta e continua na outra direção dentro de cada pedaço
+    Bool dividir(Int x0, Int y0, Int x1, Int y1, Bool horizontal, Int prof) {
+        var ini = y0
+        var fim = y1
+        if (!horizontal) {
+            ini = x0
+            fim = x1
+        }
+        var tamanho = fim - ini
+        var minCalha = tamanho / 120
+        if (minCalha < 2) { minCalha = 2 }
+        // os cortes: o meio de cada calha (faixa vazia com pelo menos minCalha de largura, longe das pontas)
+        var cortes = new Int[64]
+        var nc = 0
+        var p = ini
+        while (p < fim) {
+            var vazia = false
+            if (horizontal) { vazia = linhaVazia(p, x0, x1) } else { vazia = colunaVazia(p, y0, y1) }
+            if (vazia) {
+                var q = p
+                var segue = true
+                while (q < fim && segue) {
+                    if (horizontal) { segue = linhaVazia(q, x0, x1) } else { segue = colunaVazia(q, y0, y1) }
+                    if (segue) { q++ }
+                }
+                if (q - p >= minCalha && p > ini && q < fim && nc < 63) {
+                    cortes[nc] = (p + q) / 2
+                    nc++
+                }
+                p = q
+            } else {
+                p++
+            }
+        }
+        if (nc == 0) { return false }
+        // os pedaços entre os cortes; colunas no rtl vão da direita pra esquerda
+        var k = 0
+        while (k <= nc) {
+            var j = k
+            if (!horizontal && this.rtl) { j = nc - k }
+            var a = ini
+            if (j > 0) { a = cortes[j - 1] }
+            var b = fim
+            if (j < nc) { b = cortes[j] }
+            if (horizontal) { cortar(x0, a, x1, b, false, prof + 1) } else { cortar(a, y0, b, y1, true, prof + 1) }
+            k++
+        }
+        return true
+    }
+
+    Void guardar(Int x0, Int y0, Int x1, Int y1) {
+        if (this.total >= 40) { return }
+        var i = 4 * this.total
+        this.saida[i] = x0
+        this.saida[i + 1] = y0
+        this.saida[i + 2] = x1
+        this.saida[i + 3] = y1
+        this.total = this.total + 1
+    }
+
+    // pedaço muito pequeno (menos de 1,5% da página: onomatopeia solta, número de página) entra no quadro
+    // anterior (ou no seguinte, se for o primeiro)
+    Void juntarPequenos() {
+        var minimo = this.w * this.h * 15 / 1000
+        var i = 0
+        while (i < this.total) {
+            var k = 4 * i
+            var area = (this.saida[k + 2] - this.saida[k]) * (this.saida[k + 3] - this.saida[k + 1])
+            if (area < minimo && this.total > 1) {
+                var alvo = i - 1
+                if (alvo < 0) { alvo = 1 }
+                var t = 4 * alvo
+                if (this.saida[k] < this.saida[t]) { this.saida[t] = this.saida[k] }
+                if (this.saida[k + 1] < this.saida[t + 1]) { this.saida[t + 1] = this.saida[k + 1] }
+                if (this.saida[k + 2] > this.saida[t + 2]) { this.saida[t + 2] = this.saida[k + 2] }
+                if (this.saida[k + 3] > this.saida[t + 3]) { this.saida[t + 3] = this.saida[k + 3] }
+                // tira o pequeno da lista
+                var j = i
+                while (j < this.total - 1) {
+                    var m = 0
+                    while (m < 4) {
+                        this.saida[4 * j + m] = this.saida[4 * (j + 1) + m]
+                        m++
+                    }
+                    j++
+                }
+                this.total = this.total - 1
+            } else {
+                i++
+            }
+        }
+    }
+}

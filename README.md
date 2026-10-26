@@ -57,6 +57,13 @@ série fica organizado).
   (o núcleo em Kof entende "One Piece v03 c025", "Cap. 101.5", "Vol.12"...). No fim do capítulo: **Próximo capítulo →**.
 - **Temas** repintam a página do mangá também (Noite e Sépia ficam ótimos no preto e branco) e dá pra **cortar as bordas
   brancas**.
+- **🔲 Quadro a quadro** (padrão no celular em pé): cada toque leva ao próximo quadro, na ordem japonesa, com zoom pra
+  caber na tela; no último quadro vai pra próxima página. O núcleo em Kof ([`Quadros.kf`](nucleo/Quadros.kf)) acha os
+  quadros pelas calhas brancas. **Toque duplo** no meio mostra a página inteira (e volta). Página sem quadros
+  (splash) aparece inteira; quadros com calha inclinada podem vir juntos num só.
+- **✨ HD:** scan pequeno em tela grande é aumentado na placa de vídeo (bicúbico + nitidez só nas bordas), o traço fica
+  mais limpo. Liga sozinho quando a imagem cresce mais de 1,5×.
+- **Duplo clique/toque** fora do quadro a quadro dá zoom de 2,5× no ponto (de novo, volta).
 - O `.cbz` é lido aos pedaços: só a imagem que vai aparecer sai do arquivo (o zip é lido pelo [`Zip.kf`](nucleo/Zip.kf)).
 
 ## 📱 No celular (Android)

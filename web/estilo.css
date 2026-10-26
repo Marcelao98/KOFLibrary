@@ -262,3 +262,11 @@ html.celular .rodape { display: none; }
   .est-cartoes { grid-template-columns: 1fr 1fr; }
   .est-cartao .valor { font-size: 21px; }
 }
+
+/* ---------- quadro a quadro ---------- */
+#paginas.paginado .folha canvas.quadro { box-shadow: 0 4px 20px var(--sombra); border-radius: 3px; }
+.folha canvas.entra { animation: quadroEntra .22s ease-out; }
+.folha canvas.entra.volta { animation-name: quadroVolta; }
+@keyframes quadroEntra { from { opacity: .2; transform: scale(.94) translateX(-3%); } to { opacity: 1; transform: none; } }
+@keyframes quadroVolta { from { opacity: .2; transform: scale(.94) translateX(3%); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .folha canvas.entra { animation: none; } }

@@ -74,6 +74,21 @@ Saída: **um html só** (`dist/KOFlibrary.html`, ~2,4 MB) que abre por file:// n
   retrospectiva, conquistas, cartão do mês (canvas 1080x1350; APK `salvarBinario`, CASCA 4).
 - Teste: testes/estatisticas.cjs (1 ano de diário gerado).
 
+## v3 mangá turbo (branch `manga-turbo`, 26/10)
+- `Quadros.kf`: XY-cut na página pequena (300 de largura, brilho): calha = linha/coluna com tinta <= max(2, n/150),
+  tinta = |lum - fundo| > 32 (fundo pela borda: branco ou preto), corta horizontal depois vertical recursivo, colunas
+  em rtl da direita pra esquerda, junta pedaço < 1,5% da página, < 2 quadros = página inteira. Calha inclinada junta.
+- App: `quadrosDaImagem` (cache em doc.quadros), `mostrarQuadro(n, qi)` (recorta do bitmap e encaixa na tela,
+  respiro 0,8%), `passo` anda quadro a quadro, `quadroLigado()`, `L.verPagina` (duplo toque). config.manga += quadros
+  (padrão celular/tela < 700), hd. `duploToque`: quadro <-> página; paginado: zoomPag 2,5 no ponto (mostrar com foco).
+  dblclick do mouse ignorado até 800 ms depois de toque (o navegador gera dblclick de dois toques na beirada).
+- HD: WebGL 2 passos (Catmull-Rom 16 pontos -> nitidez adaptativa estilo CAS), `desenharImagem` usa quando aumenta
+  > 1,5x. O xBR do KOFstation é pra pixel art (serrilha scan). Banco: `onversionchange` solta e recarrega; Banco.op
+  com db nulo não faz nada.
+- Testes: gerar-paginas-quadros.py (7 páginas difíceis + gabarito) + quadros.cjs (Kof no Node, IoU >= 0,7, ordem),
+  turbo.cjs (celular/PC, HD mede nitidez). Sites de quadrinho livre (Pepper&Carrot, Wikimedia) dão 403/429 daqui.
+  Falta testar com páginas de mangá de verdade do Marcelo.
+
 ## Como falar com o Marcelo
 Português do Brasil, informal, direto; ele escreve rápido por voz (muitos erros de digitação). Liga pra economia de
 tokens: fazer só o que pediu. Commits em português, sem nome de modelo de IA. Não abrir PR sem ele pedir.

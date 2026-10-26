@@ -128,9 +128,11 @@ const todos = [];
   ok(await cel.inputValue('#lPagina') === '8', 'tecla de volume vira a página (' + await cel.inputValue('#lPagina') + ')');
   // toque no meio esconde as barras; arrastar pro lado volta uma página
   await cel.touchscreen.tap(200, 450);
+  await cel.waitForTimeout(450);   // espera pra ver se vem o segundo toque (duplo toque = zoom)
   ok(await cel.evaluate(() => document.querySelector('#leitor').classList.contains('limpo')), 'toque no meio esconde as barras');
   await cel.screenshot({ path: path.join(trab, 'cel-leitor.png') });
   await cel.touchscreen.tap(200, 450);
+  await cel.waitForTimeout(450);
   await cel.evaluate(() => KOFlibrary.irPara(5, false));
   await cel.waitForTimeout(200);
   await cel.click('#btMarcador');   // tira o marcador da 5

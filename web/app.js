@@ -74,7 +74,7 @@ const Banco = {
       r.onsuccess = () => {
         this.db = r.result;
         // e daqui pra frente: se uma versão nova abrir em outra janela, esta solta o banco e recarrega
-        this.db.onversionchange = () => { this.db.close(); toast('🔄 KOFlibrary atualizado: recarregando...'); setTimeout(() => location.reload(), 600); };
+        this.db.onversionchange = () => { this.db.close(); this.db = null; toast('🔄 KOFlibrary atualizado: recarregando...'); setTimeout(() => location.reload(), 600); };
         $('#toast').hidden = true;
         ok();
       };
@@ -82,6 +82,7 @@ const Banco = {
     });
   },
   op(loja, modo, f) {
+    if (!this.db) return Promise.resolve(undefined);   // banco solto (versão nova abrindo em outra janela): a página vai recarregar
     return new Promise((ok, erro) => {
       const t = this.db.transaction(loja, modo);
       const req = f(t.objectStore(loja));
@@ -515,6 +516,7 @@ async function abrirLivro(l) {
   L.zoom = l.zoom || 'largura';
   L.maxVista = l.pagina;
   L.modo = doc.quadrinho ? modoManga() : null;
+  L.verPagina = false; L.quadro = null;
   if (paginado()) montarPaginado(); else montarPaginas();
   irPara(Math.min(Math.max(1, l.pagina || 1), doc.numPages), false);
   l.lido = Date.now(); salvarLivro(l);
@@ -593,6 +595,7 @@ function apagar(n) {
   if (c) { c.width = 0; c.remove(); L.desenhadas.delete(n); }
 }
 function redesenhar() {
+  if (quadroLigado()) { mostrarQuadro(L.atual, L.quadro || 0); return; }
   if (paginado()) { mostrar(L.mostradas ? L.mostradas[0] : L.atual); return; }
   for (const n of [...L.desenhadas.keys()]) { apagar(n); }
   const box = $('#paginas');
@@ -610,6 +613,7 @@ function paginaNaTela() {
 }
 function irPara(n, suave = true) {
   if (!L.doc) return;
+  if (quadroLigado()) { mostrarQuadro(n, 0); return; }
   if (paginado()) { mostrar(n); return; }
   n = Math.max(1, Math.min(L.doc.numPages, n));
   const d = L.paginas[n - 1];
@@ -694,7 +698,7 @@ function desenharPainelTemas() {
   $('#ajSoEste').checked = !!(L.livro && L.livro.leitura);
   const m = modoManga();
   for (const b of document.querySelectorAll('#direcoes button')) b.classList.toggle('ativo', b.dataset.d === m.direcao);
-  $('#mgDupla').checked = m.dupla; $('#mgCortar').checked = m.cortar;
+  $('#mgDupla').checked = m.dupla; $('#mgCortar').checked = m.cortar; $('#mgQuadros').checked = m.quadros; $('#mgHd').checked = m.hd;
 }
 function alternarPainel(qual) {
   const t = $('#painelTemas'), n = $('#painelNotas');
@@ -832,6 +836,11 @@ function ligarEventos() {
   for (const b of document.querySelectorAll('#direcoes button')) b.onclick = () => mudarManga({ direcao: b.dataset.d });
   $('#mgDupla').onchange = (e) => mudarManga({ dupla: e.target.checked });
   $('#mgCortar').onchange = (e) => mudarManga({ cortar: e.target.checked });
+  $('#mgQuadros').onchange = (e) => { L.verPagina = false; mudarManga({ quadros: e.target.checked }); };
+  $('#mgHd').onchange = (e) => mudarManga({ hd: e.target.checked });
+  // duplo clique do mouse; o que o navegador gera a partir de dois toques rápidos (virando a página na beirada) não
+  // conta: o toque tem o duplo toque dele (só no meio da tela)
+  $('#paginas').addEventListener('dblclick', (e) => { e.preventDefault(); if (Date.now() - (L.ultimoToque || 0) > 800) duploToque(e.clientX, e.clientY); });
   $('#lPagina').onchange = () => { const n = parseInt($('#lPagina').value, 10); if (n) irPara(n); $('#paginas').focus(); };
   $('#btMenos').onclick = () => zoom(L.escala / 1.15);
   $('#btMais').onclick = () => zoom(L.escala * 1.15);
@@ -862,7 +871,7 @@ function ligarEventos() {
   }, { passive: false });
   let largura = innerWidth;
   addEventListener('resize', () => {
-    if (paginado()) { clearTimeout(zoom.t); zoom.t = setTimeout(() => mostrar(L.atual), 150); return; }
+    if (paginado()) { clearTimeout(zoom.t); zoom.t = setTimeout(() => (quadroLigado() ? mostrarQuadro(L.atual, L.quadro || 0) : mostrar(L.atual)), 150); return; }
     if (L.doc && L.zoom === 'largura' && Math.abs(innerWidth - largura) > 30) { largura = innerWidth; clearTimeout(zoom.t); zoom.t = setTimeout(() => zoom('largura'), 150); }
   });
 
@@ -1091,8 +1100,7 @@ async function abrirQuadrinho(fonte, l, paraLer) {
       return {
         getViewport: ({ scale }) => ({ width: cw * scale, height: ch * scale, scale }),
         render: ({ canvasContext, viewport }) => ({ promise: Promise.resolve().then(() => {
-          canvasContext.imageSmoothingQuality = 'high';
-          canvasContext.drawImage(bmp, cx, cy, cw, ch, 0, 0, viewport.width, viewport.height);
+          desenharImagem(canvasContext, bmp, cx, cy, cw, ch, viewport.width, viewport.height);
         }) }),
       };
     },
@@ -1100,13 +1108,192 @@ async function abrirQuadrinho(fonte, l, paraLer) {
   return doc;
 }
 
+// ---- mangá em HD: quando a página aparece bem maior que a imagem (scan pequeno em tela grande), aumenta na placa de
+// vídeo (WebGL, o mesmo esquema do painel de imagem do KOFstation) com bicúbico (Catmull-Rom: o traço sai liso, sem
+// serrilhado) e depois uma nitidez que só reforça as bordas (no estilo do CAS da AMD: contraste adaptativo, sem
+// halo em área lisa). O xBR do KOFstation é feito pra pixel art; em scan, que já tem traço suavizado, serrilha.
+const HD = { gl: null, tela: null, prog: null, prog2: null, ok: null };
+function hdIniciar() {
+  if (HD.ok !== null) return HD.ok;
+  try {
+    const tela = document.createElement('canvas');
+    const gl = tela.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
+    if (!gl) return (HD.ok = false);
+    const vs = 'attribute vec2 p; varying vec2 uv; void main(){ uv = p * .5 + .5; gl_Position = vec4(p, 0., 1.); }';
+    // passo 1: bicúbico Catmull-Rom (16 pontos) da região [orig] da imagem pro tamanho da saída
+    const fs1 = `precision highp float; varying vec2 uv; uniform sampler2D img; uniform vec2 tam; uniform vec4 orig;
+      vec4 cubico(float x) { float x2 = x * x, x3 = x2 * x;
+        return vec4(-.5 * x3 + x2 - .5 * x, 1.5 * x3 - 2.5 * x2 + 1., -1.5 * x3 + 2. * x2 + .5 * x, .5 * x3 - .5 * x2); }
+      void main() {
+        vec2 q = (orig.xy + vec2(uv.x, 1. - uv.y) * orig.zw) * tam - .5, i = floor(q), f = q - i;
+        vec4 wx = cubico(f.x), wy = cubico(f.y); vec3 s = vec3(0.);
+        for (int y = 0; y < 4; y++) { vec3 lin = vec3(0.);
+          for (int x = 0; x < 4; x++) lin += texture2D(img, (i + vec2(float(x) - 1., float(y) - 1.) + .5) / tam).rgb * wx[x];
+          s += lin * wy[y]; }
+        gl_FragColor = vec4(clamp(s, 0., 1.), 1.); }`;
+    // passo 2: nitidez adaptativa (cruz de 5 pontos; mais forte onde o contraste local é baixo, nada onde já é máximo)
+    const fs2 = `precision highp float; varying vec2 uv; uniform sampler2D img; uniform vec2 px;
+      void main() {
+        vec3 e = texture2D(img, uv).rgb, b = texture2D(img, uv + vec2(0., px.y)).rgb, h = texture2D(img, uv - vec2(0., px.y)).rgb;
+        vec3 d = texture2D(img, uv - vec2(px.x, 0.)).rgb, f = texture2D(img, uv + vec2(px.x, 0.)).rgb;
+        vec3 mn = min(e, min(min(b, h), min(d, f))), mx = max(e, max(max(b, h), max(d, f)));
+        vec3 amp = sqrt(clamp(min(mn, 1. - mx) / max(mx, 1e-4), 0., 1.));
+        vec3 w = amp * -.16;
+        gl_FragColor = vec4(clamp((e + (b + h + d + f) * w) / (1. + 4. * w), 0., 1.), 1.); }`;
+    const programa = (fs) => {
+      const p = gl.createProgram();
+      for (const [t, f] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+        const s = gl.createShader(t); gl.shaderSource(s, f); gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+        gl.attachShader(p, s);
+      }
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+      return p;
+    };
+    HD.prog = programa(fs1); HD.prog2 = programa(fs2);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    HD.gl = gl; HD.tela = tela;
+    return (HD.ok = true);
+  } catch (e) { console.warn('HD sem WebGL', e); return (HD.ok = false); }
+}
+function hdDesenhar(bmp, sx, sy, sw, sh, dw, dh) {
+  const gl = HD.gl, tela = HD.tela;
+  dw = Math.round(dw); dh = Math.round(dh);
+  if (dw > gl.getParameter(gl.MAX_TEXTURE_SIZE) || dh > gl.getParameter(gl.MAX_TEXTURE_SIZE)) return null;
+  tela.width = dw; tela.height = dh;
+  const tex = (w, h, fonte) => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    if (fonte) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fonte);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    return t;
+  };
+  const usar = (p) => { gl.useProgram(p); const a = gl.getAttribLocation(p, 'p'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0); };
+  const tImg = tex(0, 0, bmp), tMeio = tex(dw, dh, null), fb = gl.createFramebuffer();
+  // passo 1 -> textura do meio
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tMeio, 0);
+  gl.viewport(0, 0, dw, dh); usar(HD.prog);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tImg);
+  gl.uniform1i(gl.getUniformLocation(HD.prog, 'img'), 0);
+  gl.uniform2f(gl.getUniformLocation(HD.prog, 'tam'), bmp.width, bmp.height);
+  gl.uniform4f(gl.getUniformLocation(HD.prog, 'orig'), sx / bmp.width, sy / bmp.height, sw / bmp.width, sh / bmp.height);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // passo 2 -> tela
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); usar(HD.prog2);
+  gl.bindTexture(gl.TEXTURE_2D, tMeio);
+  gl.uniform1i(gl.getUniformLocation(HD.prog2, 'img'), 0);
+  gl.uniform2f(gl.getUniformLocation(HD.prog2, 'px'), 1 / dw, 1 / dh);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.deleteTexture(tImg); gl.deleteTexture(tMeio); gl.deleteFramebuffer(fb);
+  return tela;
+}
+// desenha um pedaço da imagem no canvas: com HD quando aumenta mais de 1,5x (e o HD está ligado), senão o do navegador
+function desenharImagem(ctx, bmp, sx, sy, sw, sh, dw, dh) {
+  const m = L.modo || modoManga();
+  if (m.hd && dw / sw > 1.5 && hdIniciar()) {
+    const t = hdDesenhar(bmp, sx, sy, sw, sh, dw, dh);
+    if (t) { ctx.drawImage(t, 0, 0, dw, dh); L.usouHD = true; return; }
+  }
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, dw, dh);
+}
+
+// ---- quadro a quadro: os quadros de cada página (Kof: Quadros), mostrados um por vez com zoom pra caber na tela
+const quadroLigado = () => paginado() && L.modo.quadros && !L.verPagina;
+function quadrosDaImagem(bmp, rtl) {
+  const w = 300, h = Math.max(8, Math.round((bmp.height / bmp.width) * 300));
+  const c = new OffscreenCanvas(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data, lum = new Int32Array(w * h);
+  for (let i = 0; i < lum.length; i++) lum[i] = (d[4 * i] * 77 + d[4 * i + 1] * 151 + d[4 * i + 2] * 28) >> 8;
+  const r = new K.Quadros(lum, w, h, rtl).achar(), fx = bmp.width / w, fy = bmp.height / h, q = [];
+  for (let k = 0; k < r[0]; k++) {
+    // um respiro de 0,8% em volta do quadro (o traço da borda não cola na beira da tela; mais que isso já pega a
+    // borda do quadro vizinho do outro lado da calha)
+    const mx = bmp.width * 0.008, my = bmp.height * 0.008;
+    const x0 = Math.max(0, r[1 + 4 * k] * fx - mx), y0 = Math.max(0, r[2 + 4 * k] * fy - my);
+    q.push([x0, y0, Math.min(bmp.width, r[3 + 4 * k] * fx + mx) - x0, Math.min(bmp.height, r[4 + 4 * k] * fy + my) - y0]);
+  }
+  return q;
+}
+async function mostrarQuadro(n, qi, efeito = 1) {
+  const doc = L.doc; if (!doc) return;
+  n = Math.max(1, Math.min(doc.numPages, n));
+  const vez = (L.vez = (L.vez || 0) + 1);
+  const { bmp } = await doc.bitmap(n);
+  if (!doc.quadros) doc.quadros = new Map();
+  if (!doc.quadros.has(n)) doc.quadros.set(n, quadrosDaImagem(bmp, L.modo.direcao !== 'ltr'));
+  const qs = doc.quadros.get(n);
+  if (vez !== L.vez || doc !== L.doc) return;
+  if (qs.length < 2) { L.quadro = null; L.nQuadros = 1; await mostrar(n); return; }   // página sem quadros: inteira
+  if (qi === 'ultimo') qi = qs.length - 1;
+  qi = Math.max(0, Math.min(qs.length - 1, qi));
+  const [sx, sy, sw, sh] = qs[qi];
+  const box = $('#paginas'), folha = box.querySelector('.folha');
+  const W = box.clientWidth - 8, H = box.clientHeight - 8, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const escala = Math.min(W / sw, H / sh);
+  L.escala = escala;
+  const c = document.createElement('canvas');
+  c.width = Math.round(sw * escala * dpr); c.height = Math.round(sh * escala * dpr);
+  c.style.width = Math.round(sw * escala) + 'px'; c.style.height = Math.round(sh * escala) + 'px';
+  const ctx = c.getContext('2d', { willReadFrequently: L.tema !== null });
+  desenharImagem(ctx, bmp, sx, sy, sw, sh, c.width, c.height);
+  pintar(c, ctx);
+  if (vez !== L.vez || doc !== L.doc) { c.width = 0; return; }
+  for (const v of folha.querySelectorAll('canvas')) v.width = 0;
+  c.className = 'quadro entra' + (efeito < 0 ? ' volta' : '');
+  folha.replaceChildren(c);
+  folha.classList.remove('zoom');
+  box.scrollTop = 0; box.scrollLeft = 0;
+  $('#fimCap').hidden = true;
+  L.mostradas = [n]; L.quadro = qi; L.nQuadros = qs.length;
+  mudouPagina(n);
+  $('#lInfo').textContent = `quadro ${qi + 1} de ${qs.length} · ` + $('#lInfo').textContent;
+  if (n >= doc.numPages && qi === qs.length - 1 && L.livro && !L.livro.terminado) { marcarTerminado(L.livro); salvarDepois(L.livro); }
+  marcarPaginas();
+  for (let k = n + 1; k <= Math.min(doc.numPages, n + 3); k++) doc.bitmap(k).catch(() => {});
+}
+// duplo toque: no quadro a quadro alterna "página inteira"; na página, zoom de 2,5x no ponto tocado (de novo: volta)
+function duploToque(x, y) {
+  if (!L.doc) return;
+  if (paginado() && L.modo.quadros) {
+    L.verPagina = !L.verPagina;
+    if (L.verPagina) mostrar(L.atual); else mostrarQuadro(L.atual, L.quadro || 0);
+    return;
+  }
+  if (paginado()) {
+    const c = $('#paginas .folha canvas');
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    const foco = { rx: (x - r.left) / r.width, ry: (y - r.top) / r.height };
+    L.zoomPag = L.zoomPag > 1 ? 1 : 2.5;
+    mostrar(L.atual, false, L.zoomPag > 1 ? foco : null);
+    return;
+  }
+  zoom(L.zoom === 'largura' ? L.escala * 2 : 'largura');
+}
+
 // ---- leitor paginado (mangá): uma página, ou duas lado a lado em tela larga; direita->esquerda por padrão
-function modoManga() { return Object.assign({ direcao: 'rtl', dupla: true, cortar: false }, config.manga || {}); }
+function modoManga() { return Object.assign({ direcao: 'rtl', dupla: true, cortar: false, quadros: !!APK || innerWidth < 700, hd: true }, config.manga || {}); }
 const paginado = () => !!(L.doc && L.doc.quadrinho && L.modo && L.modo.direcao !== 'vertical');
 const sentido = () => (paginado() && L.modo.direcao === 'rtl' ? -1 : 1);   // tecla/toque pra "frente" no mangá japonês é pra esquerda
 function passo(d) {
   if (!L.doc) return;
   if (!paginado()) { irPara(L.atual + d, false); return; }
+  L.zoomPag = 1;
+  if (quadroLigado()) {
+    if (!$('#fimCap').hidden && d < 0) { $('#fimCap').hidden = true; return; }
+    const n = L.atual, q = L.quadro;
+    if (d > 0) {
+      if (q !== null && q !== undefined && q < L.nQuadros - 1) mostrarQuadro(n, q + 1, 1);
+      else if (n >= L.doc.numPages) fimDoCapitulo();
+      else mostrarQuadro(n + 1, 0, 1);
+    } else if (q) mostrarQuadro(n, q - 1, -1);
+    else if (n > 1) mostrarQuadro(n - 1, 'ultimo', -1);
+    return;
+  }
   if (d > 0) {
     const ultima = Math.max(...(L.mostradas || [L.atual]));
     if (ultima >= L.doc.numPages) { fimDoCapitulo(); return; }
@@ -1130,12 +1317,12 @@ function montarPaginado() {
 }
 // página larga (página dupla desenhada junto) fica sozinha; a capa (1) também
 async function larga(n) { const v = (await L.doc.getPage(n)).getViewport({ scale: 1 }); return v.width > v.height * 1.05; }
-async function mostrar(n, voltando = false) {
+async function mostrar(n, voltando = false, foco = null) {
   const doc = L.doc; if (!doc) return;
   n = Math.max(1, Math.min(doc.numPages, n));
   const vez = (L.vez = (L.vez || 0) + 1);
   const box = $('#paginas'), folha = box.querySelector('.folha');
-  const dupla = L.modo.dupla && box.clientWidth > box.clientHeight * 1.1 && L.zoomPag === 1;
+  const dupla = L.modo.dupla && box.clientWidth > box.clientHeight * 1.1 && L.zoomPag === 1 && !L.modo.quadros;
   let pares = [n];
   if (dupla) {
     if (voltando && n > 2 && !(await larga(n)) && !(await larga(n - 1))) pares = [n - 1, n];
@@ -1165,9 +1352,10 @@ async function mostrar(n, voltando = false) {
   for (const c of folha.querySelectorAll('canvas')) c.width = 0;
   folha.replaceChildren(...telas);
   folha.classList.toggle('zoom', L.zoomPag > 1);
-  box.scrollTop = 0; box.scrollLeft = L.modo.direcao === 'rtl' ? box.scrollWidth : 0;
+  if (foco) { box.scrollLeft = foco.rx * box.scrollWidth - box.clientWidth / 2; box.scrollTop = foco.ry * box.scrollHeight - box.clientHeight / 2; }
+  else { box.scrollTop = 0; box.scrollLeft = L.modo.direcao === 'rtl' ? box.scrollWidth : 0; }
   $('#fimCap').hidden = true;
-  L.mostradas = pares;
+  L.mostradas = pares; L.quadro = null;
   mudouPagina(pares[0]);
   if (pares[pares.length - 1] >= doc.numPages && L.livro && !L.livro.terminado) { marcarTerminado(L.livro); salvarDepois(L.livro); }
   marcarPaginas();
@@ -1748,6 +1936,7 @@ function ligarToque() {
     box.style.transform = `scale(${pinca.f})`;
   }, { passive: false });
   box.addEventListener('touchend', (e) => {
+    L.ultimoToque = Date.now();
     if (pinca) {
       if (e.touches.length) return;
       const f = pinca.f; pinca = null;
@@ -1766,7 +1955,13 @@ function ligarToque() {
       const x = t.clientX / innerWidth;
       if (x < 0.25) passo(-sentido());
       else if (x > 0.75) passo(sentido());
-      else $('#leitor').classList.toggle('limpo');
+      else if (ligarToque.ultimo && Date.now() - ligarToque.ultimo.t < 300) {   // segundo toque no meio: zoom/página inteira
+        clearTimeout(ligarToque.espera); ligarToque.ultimo = null;
+        duploToque(t.clientX, t.clientY);
+      } else {   // espera um pouco pra ver se vem o segundo toque; não veio: mostra/esconde as barras
+        ligarToque.ultimo = { t: Date.now() };
+        ligarToque.espera = setTimeout(() => { ligarToque.ultimo = null; $('#leitor').classList.toggle('limpo'); }, 300);
+      }
     }
   });
 }
@@ -1945,4 +2140,4 @@ async function iniciar() {
 iniciar();
 
 // pros testes
-window.KOFlibrary = { livros, fontes, L, temas, config, marcarTerminado, diario, diaDe, juntarDiario, sequencias, situacaoMeta, salvarMetas, checarConquistas, abrirEstatisticas, cartaoDoMes, montarBackup, restaurarBackup, gravarBackupAuto, relatorio, adicionarPasta, ligarBackupAuto, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };
+window.KOFlibrary = { livros, fontes, L, temas, config, mudarManga, duploToque, passo, quadrosDaImagem, HD, marcarTerminado, diario, diaDe, juntarDiario, sequencias, situacaoMeta, salvarMetas, checarConquistas, abrirEstatisticas, cartaoDoMes, montarBackup, restaurarBackup, gravarBackupAuto, relatorio, adicionarPasta, ligarBackupAuto, abrirLivro, adicionarArquivos, irPara, ajustar, fecharLivro, sincronizarCelular, juntarLivro };
